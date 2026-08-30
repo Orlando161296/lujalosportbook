@@ -27,6 +27,25 @@ export function PizarraApp() {
   // refresco siguiente, o nunca si la anterior seguía abierta.
   const enPizarra = useQuery({ queryKey: ['pizarra-carrera'], queryFn: api.pizarra.actual });
 
+  // La pizarra no tiene cómo cerrarse: va sin bordes —no hay una X— y fuera
+  // de la barra de tareas, así que en el TV no hay dónde hacer clic ni cómo
+  // alternarla. Escape la cierra; el botón «Pizarra ↗» de la taquilla la
+  // vuelve a abrir cuando haga falta.
+  useEffect(() => {
+    const alTecla = async (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().close();
+      } catch {
+        // En el navegador no hay ventana nativa que cerrar; se ignora para
+        // que `npm run dev` siga sirviendo para mirar el diseño.
+      }
+    };
+    window.addEventListener('keydown', alTecla);
+    return () => window.removeEventListener('keydown', alTecla);
+  }, []);
+
   // El anuncio llega a todos los clientes, no a la room de una carrera:
   // justamente dice de qué carrera hay que empezar a hablar.
   useEffect(() => {
@@ -78,6 +97,7 @@ export function PizarraApp() {
     return (
       <div className="grid h-full place-items-center bg-negro font-display text-4xl text-amarillo">
         LUJALO SPORTSBOOK
+        <PistaCerrar />
       </div>
     );
   }
@@ -87,6 +107,8 @@ export function PizarraApp() {
   const marco = 'border-2 border-pizarra-marco';
 
   return (
+    <>
+    <PistaCerrar />
     <Escalada>
     <div className="flex h-full w-full flex-col gap-3.5 bg-pizarra-campo p-4 font-ui">
       {/* ── Cabecera ── */}
@@ -351,6 +373,7 @@ export function PizarraApp() {
       </footer>
     </div>
     </Escalada>
+    </>
   );
 }
 
@@ -398,6 +421,32 @@ const ALTO_DISENO = 1080;
  * ningún borde, y sobra franja arriba/abajo o a los lados si la pantalla no
  * es 16:9. Esa franja va del color del campo para que no se vea un marco.
  */
+/**
+ * «Esc para cerrar», unos segundos y se va.
+ *
+ * La pizarra es una pantalla de público: un cartel permanente ahí sería
+ * ruido para el salón. Pero sin ninguna pista, cómo cerrarla es algo que hay
+ * que saber de memoria —la ventana no tiene bordes ni figura en la barra de
+ * tareas—, así que se muestra al abrir y desaparece sola.
+ */
+function PistaCerrar() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(false), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div
+      className={`pointer-events-none fixed bottom-3 right-4 z-50 rounded
+        bg-negro/70 px-3 py-1.5 font-ui text-[13px] tracking-wide text-gris-claro
+        transition-opacity duration-1000 ${visible ? 'opacity-100' : 'opacity-0'}`}
+    >
+      <b className="text-hueso">Esc</b> para cerrar esta pantalla
+    </div>
+  );
+}
+
 function Escalada({ children }: { children: ReactNode }) {
   const [escala, setEscala] = useState(1);
 

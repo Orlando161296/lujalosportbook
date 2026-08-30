@@ -227,13 +227,23 @@ async function abrirPizarra() {
     // taquilla; si hay uno solo, se abre como ventana común y movible.
     const propio = monitores.find((m) => m.name !== actual?.name);
 
+    // Monitor.size y Monitor.position vienen en píxeles FÍSICOS, pero estas
+    // opciones se interpretan como LÓGICOS. Con el escalado de Windows al
+    // 125% o 150% —lo habitual en monitores grandes— pedir «1920 lógicos»
+    // abría una ventana de 2880 físicos: la pizarra se salía del monitor por
+    // abajo y por la derecha, y encima aparecía corrida porque la posición
+    // se estiraba con el mismo factor. Dividir por scaleFactor devuelve la
+    // medida lógica que corresponde a ese monitor.
+    const factor = propio?.scaleFactor ?? 1;
+    const logico = (px: number) => Math.round(px / factor);
+
     const nueva = new WebviewWindow('pizarra', {
       url: 'index.html',
       title: 'Lujalo — Pizarra Pública',
-      width: propio ? propio.size.width : 1024,
-      height: propio ? propio.size.height : 640,
-      x: propio ? propio.position.x : 60,
-      y: propio ? propio.position.y : 60,
+      width: propio ? logico(propio.size.width) : 1024,
+      height: propio ? logico(propio.size.height) : 640,
+      x: propio ? logico(propio.position.x) : 60,
+      y: propio ? logico(propio.position.y) : 60,
       decorations: !propio,
       skipTaskbar: !!propio,
       resizable: !propio,

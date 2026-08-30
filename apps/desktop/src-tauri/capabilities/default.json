@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permisos base para las dos ventanas. Tauri 2 deniega todo por defecto: sin este archivo el frontend no puede ni consultar su propia ventana.",
-  "windows": ["taquilla", "pizarra"],
+  "description": "Permisos base para las dos ventanas. Tauri 2 deniega todo por defecto: sin este archivo el frontend no puede ni consultar su propia ventana. allow-close es lo que deja cerrar la pizarra con Escape, que va sin bordes y fuera de la barra de tareas y no tiene otra forma de cerrarse.",
+  "windows": [
+    "taquilla",
+    "pizarra"
+  ],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
@@ -10,6 +13,7 @@
     "core:window:allow-set-focus",
     "core:window:allow-set-fullscreen",
     "core:window:allow-set-decorations",
-    "core:window:allow-set-skip-taskbar"
+    "core:window:allow-set-skip-taskbar",
+    "core:window:allow-close"
   ]
 }

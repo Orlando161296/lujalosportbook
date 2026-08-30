@@ -25,13 +25,43 @@ fn ruta_configuracion(app: &tauri::AppHandle) -> std::path::PathBuf {
     dir.join("pantallas.json")
 }
 
+/**
+ * A qué monitor va cada ventana cuando nadie lo configuró todavía.
+ *
+ * Se detecta en vez de asumir «taquilla en el 0, pizarra en el 1»: el orden
+ * en que el sistema enumera los monitores no es el que uno espera, y si el
+ * televisor quedaba primero la pizarra salía en la pantalla del operador y
+ * la taquilla en el TV, a la vista del salón.
+ *
+ * El criterio es el del uso real: el operador trabaja en el monitor primario
+ * —el que Windows marca como principal, donde está la barra de tareas—, y la
+ * pizarra se va al primero que no sea ese, que es el televisor. Con una sola
+ * pantalla los dos índices coinciden y `posicionar_ventanas` la trata como
+ * ventana común.
+ */
+fn configuracion_detectada(app: &tauri::AppHandle) -> ConfiguracionPantallas {
+    let monitores = app.available_monitors().unwrap_or_default();
+
+    let primario = app.primary_monitor().ok().flatten();
+    let monitor_taquilla = primario
+        .as_ref()
+        .and_then(|p| monitores.iter().position(|m| m.name() == p.name()))
+        .unwrap_or(0);
+
+    let monitor_pizarra = (0..monitores.len())
+        .find(|i| *i != monitor_taquilla)
+        .unwrap_or(monitor_taquilla);
+
+    ConfiguracionPantallas { monitor_taquilla, monitor_pizarra }
+}
+
 fn leer_configuracion(app: &tauri::AppHandle) -> ConfiguracionPantallas {
     let ruta = ruta_configuracion(app);
     match fs::read_to_string(&ruta) {
-        Ok(contenido) => serde_json::from_str(&contenido).unwrap_or_default(),
-        // Primera vez: sin configuración todavía, valores por defecto
-        // (taquilla en el monitor 0, pizarra en el 1 si existe).
-        Err(_) => ConfiguracionPantallas { monitor_taquilla: 0, monitor_pizarra: 1 },
+        // Lo que el administrador haya guardado manda sobre la detección.
+        Ok(contenido) => serde_json::from_str(&contenido)
+            .unwrap_or_else(|_| configuracion_detectada(app)),
+        Err(_) => configuracion_detectada(app),
     }
 }
 
