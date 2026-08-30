@@ -422,27 +422,43 @@ const ALTO_DISENO = 1080;
  * es 16:9. Esa franja va del color del campo para que no se vea un marco.
  */
 /**
- * «Esc para cerrar», unos segundos y se va.
+ * «Esc para cerrar»: al abrir, y cada vez que alguien mueve el mouse.
  *
- * La pizarra es una pantalla de público: un cartel permanente ahí sería
- * ruido para el salón. Pero sin ninguna pista, cómo cerrarla es algo que hay
- * que saber de memoria —la ventana no tiene bordes ni figura en la barra de
- * tareas—, así que se muestra al abrir y desaparece sola.
+ * La pizarra es una pantalla de público, así que un cartel permanente sería
+ * ruido en el salón. Pero mostrarlo sólo unos segundos al arrancar tampoco
+ * sirve: quien abre la pizarra está mirando la taquilla en el otro monitor y
+ * cuando voltea al televisor el cartel ya se fue.
+ *
+ * El mouse es la señal correcta: en el TV nadie lo toca en toda la jornada,
+ * y el único momento en que aparece un puntero sobre esta pantalla es cuando
+ * el operador vino a hacer algo con ella. Ahí la pista reaparece sola.
  */
 function PistaCerrar() {
   const [visible, setVisible] = useState(true);
+
   useEffect(() => {
-    const t = setTimeout(() => setVisible(false), 6000);
-    return () => clearTimeout(t);
+    let t: ReturnType<typeof setTimeout>;
+    const mostrar = () => {
+      setVisible(true);
+      clearTimeout(t);
+      t = setTimeout(() => setVisible(false), 12000);
+    };
+    mostrar();
+    window.addEventListener('mousemove', mostrar);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('mousemove', mostrar);
+    };
   }, []);
 
   return (
     <div
-      className={`pointer-events-none fixed bottom-3 right-4 z-50 rounded
-        bg-negro/70 px-3 py-1.5 font-ui text-[13px] tracking-wide text-gris-claro
-        transition-opacity duration-1000 ${visible ? 'opacity-100' : 'opacity-0'}`}
+      className={`pointer-events-none fixed bottom-4 right-5 z-50 rounded-md
+        border border-humo bg-negro/85 px-4 py-2 font-ui text-[17px] tracking-wide
+        text-gris-claro transition-opacity duration-700
+        ${visible ? 'opacity-100' : 'opacity-0'}`}
     >
-      <b className="text-hueso">Esc</b> para cerrar esta pantalla
+      <b className="text-amarillo">Esc</b> para cerrar esta pantalla
     </div>
   );
 }

@@ -104,7 +104,16 @@ fn posicionar_ventanas(app: &tauri::AppHandle, config: &ConfiguracionPantallas) 
 
         match monitor_propio {
             Some(monitor) => {
+                // El tamaño se fija ADEMÁS del fullscreen, y en unidades
+                // físicas —que es lo que reporta el monitor—. La ventana
+                // nace con los 1920×1080 de tauri.conf.json, y si el
+                // fullscreen no llegaba a aplicarse (el error se descarta,
+                // como todo acá) quedaba de ese tamaño sobre un televisor
+                // más chico: el contenido se salía por abajo y por la
+                // derecha. Calzándola al monitor primero, el resultado es
+                // correcto aunque el fullscreen no haga nada.
                 let _ = ventana.set_position(*monitor.position());
+                let _ = ventana.set_size(*monitor.size());
                 let _ = ventana.set_fullscreen(true);
             }
             None => {
