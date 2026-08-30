@@ -89,6 +89,13 @@ fn posicionar_ventanas(app: &tauri::AppHandle, config: &ConfiguracionPantallas) 
         if let Some(monitor) = monitores.get(config.monitor_taquilla) {
             let _ = ventana.set_position(*monitor.position());
         }
+        // Maximizar DESPUÉS de moverla, y no confiar en `maximized: true` de
+        // la config: mover una ventana la saca del estado maximizado, así que
+        // quedaba con los 1280×720 fijos del archivo. En una laptop con
+        // escalado de Windows eso es más grande que la pantalla y la ventana
+        // se salía. Maximizada se ajusta al área de trabajo del monitor, que
+        // además respeta la barra de tareas.
+        let _ = ventana.maximize();
         let _ = ventana.show();
         let _ = ventana.set_focus();
     }

@@ -123,6 +123,8 @@ export const api = {
     impresora: () => get<EstadoImpresora>('/tickets/impresora'),
     // Reimprime uno ya emitido: no consume numeración ni toca la base.
     imprimir: (id: number) => post<{ impreso: true }>(`/tickets/${id}/imprimir`),
+    // Página de prueba: verifica la térmica sin gastar un correlativo.
+    prueba: () => post<{ impreso: true }>('/tickets/prueba'),
   },
 
   pizarra: {

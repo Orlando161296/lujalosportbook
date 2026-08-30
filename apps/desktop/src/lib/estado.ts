@@ -11,7 +11,8 @@ export type Juego = 'remate' | 'ganadores' | 'tablasFijas' | 'cincoSeis';
 export type Seccion = Juego | 'resumen' | 'config';
 export type PantallaRemate = 'tablero' | 'ejemplares' | 'cobros' | 'historial';
 export type PantallaConfig =
-  | 'tasa' | 'usuarios' | 'hipodromos' | 'jornadas' | 'clientes' | 'taquillas';
+  | 'tasa' | 'usuarios' | 'hipodromos' | 'jornadas' | 'clientes' | 'taquillas'
+  | 'impresora';
 
 interface EstadoNavegacion {
   seccion: Seccion;

@@ -22,6 +22,23 @@ export class TicketsController {
     return this.impresora.estado();
   }
 
+  // Verificar la impresora sin emitir un ticket real: el correlativo no se
+  // reinicia nunca, así que probar cobrando dejaría números gastados en el
+  // historial cada vez que se ajusta el papel.
+  @Post('prueba')
+  @HttpCode(200)
+  async prueba() {
+    try {
+      await this.impresora.imprimirPrueba();
+      return { impreso: true };
+    } catch (causa) {
+      if (causa instanceof ImpresionFallida) {
+        throw new ServiceUnavailableException(causa.message);
+      }
+      throw causa;
+    }
+  }
+
   // Texto plano, con el ancho exacto del papel: la app lo muestra en
   // monoespaciada y eso ES la previsualización. Sin HTML de por medio para
   // que no haya diferencia entre lo que se ve y lo que se imprime.

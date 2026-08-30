@@ -14,6 +14,7 @@ const SECCIONES: { id: PantallaConfig; nombre: string }[] = [
   { id: 'usuarios', nombre: 'Usuarios y roles' },
   { id: 'hipodromos', nombre: 'Hipódromos' },
   { id: 'jornadas', nombre: 'Carreras del día' },
+  { id: 'impresora', nombre: 'Impresora' },
   { id: 'clientes', nombre: 'Clientes VIP' },
   { id: 'taquillas', nombre: 'Taquillas' },
 ];
@@ -44,6 +45,7 @@ export function Configuracion() {
         {pantallaConfig === 'usuarios' && <Usuarios />}
         {pantallaConfig === 'hipodromos' && <Hipodromos />}
         {pantallaConfig === 'jornadas' && <Jornadas />}
+        {pantallaConfig === 'impresora' && <Impresora />}
         {pantallaConfig === 'clientes' && <Clientes />}
         {pantallaConfig === 'taquillas' && <Taquillas />}
       </div>
@@ -279,6 +281,85 @@ function Hipodromos() {
         </Panel>
       </div>
     </>
+  );
+}
+
+/* ───────────────────────────── Impresora ───────────────────────────── */
+
+/**
+ * Estado de la térmica y su página de prueba.
+ *
+ * La configuración vive en el `.env` de cada PC y no acá: es una propiedad de
+ * la máquina —qué impresora tiene enchufada y de cuántos milímetros— y no del
+ * negocio. Lo que sí hace falta en pantalla es poder verla y probarla sin
+ * emitir un ticket real, porque el correlativo no se reinicia nunca y ajustar
+ * el papel a fuerza de cobros deja números gastados en el historial.
+ */
+function Impresora() {
+  const estado = useQuery({ queryKey: ['impresora'], queryFn: api.tickets.impresora });
+
+  const probar = useMutation({
+    mutationFn: () => api.tickets.prueba(),
+    onSuccess: () => avisar.exito('Página de prueba enviada',
+      'Si no sale papel, revisá que la impresora esté encendida y con rollo.'),
+    onError: (e) => avisar.error('No se pudo imprimir',
+      e instanceof Error ? e.message : 'Error inesperado.'),
+  });
+
+  if (estado.isPending) return <Cargando que="la impresora" />;
+  if (estado.error) return <Problema error={estado.error} reintentar={estado.refetch} />;
+  const i = estado.data!;
+
+  return (
+    <>
+      <Titulo
+        texto="Impresora"
+        nota="Se configura en el archivo .env de esta PC, no desde acá: es propiedad de la máquina."
+      />
+
+      <Panel className="max-w-[560px]" cuerpoClassName="p-0">
+        <Dato etiqueta="Destino" valor={
+          i.destino === 'log' ? 'Ninguna — el ticket sale por el registro del servidor'
+          : i.destino === 'usb' ? `USB o compartida · ${i.donde}`
+          : `Red · ${i.donde}`
+        } />
+        <Dato etiqueta="Papel" valor={`${i.anchoMm} mm · ${i.columnas} columnas`} />
+        <Dato etiqueta="Corte" valor={i.corta ? 'Automático' : 'A mano'} />
+      </Panel>
+
+      <div className="mt-4 flex max-w-[560px] items-center gap-3">
+        <Boton
+          tono="principal"
+          disabled={probar.isPending}
+          onClick={() => probar.mutate()}
+        >
+          {probar.isPending ? 'Enviando…' : 'Imprimir página de prueba'}
+        </Boton>
+        <p className="flex-1 text-[13px] leading-snug text-gris">
+          Saca una hoja con una regla de ancho y los acentos. Si el último
+          número de la regla no entra, el papel configurado no es el real; si
+          los acentos salen raros, la impresora no tomó la tabla de caracteres.
+        </p>
+      </div>
+
+      {!i.conectada && (
+        <p className="mt-4 max-w-[560px] text-[13px] font-semibold leading-snug text-naranja">
+          No hay impresora configurada: los tickets se emiten igual y quedan en
+          el historial, pero no sale papel. Para conectarla, poné
+          IMPRESORA_DESTINO e IMPRESORA_RUTA en apps/backend/.env y reiniciá
+          el servidor.
+        </p>
+      )}
+    </>
+  );
+}
+
+function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-borde px-4 py-2.5 last:border-0">
+      <span className="etiqueta">{etiqueta}</span>
+      <span className="text-right text-[15px] font-semibold">{valor}</span>
+    </div>
   );
 }
 

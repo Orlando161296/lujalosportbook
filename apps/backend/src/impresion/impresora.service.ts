@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, unlink } from 'node:fs/promises';
 import { createConnection } from 'node:net';
+import { execFile } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   INICIALIZAR, TABLA_PC850, alinear, avanzar, CORTAR, codificarPC850,
 } from './escpos';
@@ -108,7 +111,36 @@ export class ImpresoraService {
       // que abre un trabajo de impresión nuevo.
       await writeFile(ruta, bytes, { flag: 'w' });
     } catch (causa) {
+      // Un recurso compartido de impresora en Windows no es un archivo:
+      // según cómo esté publicada la cola, abrirlo para escribir falla. El
+      // camino que sí funciona siempre es volcar a un temporal y copiarlo en
+      // binario al compartido, que es lo que hace el `copy /b` de toda la
+      // vida. Se intenta primero lo directo porque cuando anda evita el
+      // rebote por disco.
+      if (process.platform === 'win32' && ruta.startsWith('\\\\')) {
+        return this.aCompartidoWindows(ruta, bytes);
+      }
       throw new ImpresionFallida(ruta, causa);
+    }
+  }
+
+  /** `copy /b temporal \\PC\COLA` — la vía de Windows para mandar RAW. */
+  private async aCompartidoWindows(ruta: string, bytes: Buffer): Promise<void> {
+    const temporal = join(tmpdir(), `lujalo-ticket-${Date.now()}.bin`);
+    try {
+      await writeFile(temporal, bytes);
+      await new Promise<void>((resolver, rechazar) => {
+        // execFile con los argumentos separados: la ruta sale del .env, pero
+        // igual no se arma una línea de comandos que el shell reinterprete.
+        execFile('cmd', ['/c', 'copy', '/b', temporal, ruta], (error, _salida, errSalida) => {
+          if (error) rechazar(new Error(errSalida?.trim() || error.message));
+          else resolver();
+        });
+      });
+    } catch (causa) {
+      throw new ImpresionFallida(ruta, causa);
+    } finally {
+      await unlink(temporal).catch(() => {});
     }
   }
 
@@ -150,6 +182,49 @@ export class ImpresoraService {
         else resolver();
       });
     });
+  }
+
+  /**
+   * Página de prueba.
+   *
+   * Existe para poder verificar la térmica sin rematar una carrera y
+   * cobrarle a alguien: el día que se conecta hay que probar el ancho, los
+   * acentos y el avance del papel, y hacerlo emitiendo tickets reales gasta
+   * correlativos que después quedan en el historial para siempre.
+   */
+  async imprimirPrueba(): Promise<void> {
+    const { columnas, anchoMm, destino, corta } = this.config;
+    const centro = (t: string) =>
+      ' '.repeat(Math.max(0, Math.floor((columnas - t.length) / 2))) + t;
+    const par = (a: string, b: string) =>
+      a + ' '.repeat(Math.max(1, columnas - a.length - b.length)) + b;
+
+    const l = [
+      centro('SPORTBOOK LUJALO'),
+      centro('PRUEBA DE IMPRESORA'),
+      '='.repeat(columnas),
+      par('PAPEL', `${anchoMm} mm`),
+      par('COLUMNAS', String(columnas)),
+      par('DESTINO', destino),
+      par('CORTE', corta ? 'automatico' : 'a mano'),
+      '-'.repeat(columnas),
+      // La regla marca dónde termina el papel: si el último dígito no sale
+      // completo, el ancho configurado no es el real de la impresora.
+      centro('REGLA DE ANCHO'),
+      Array.from({ length: columnas }, (_, i) => String((i + 1) % 10)).join(''),
+      '-'.repeat(columnas),
+      // Si acá salen símbolos raros, la impresora no tomó la tabla PC850.
+      centro('ACENTOS'),
+      'ÁÉÍÓÚ áéíóú ÑñÜü ¿¡ «»',
+      'HIPÓDROMO · N° · PROPORCIÓN',
+      '-'.repeat(columnas),
+      par('MONTO', '1.234.567,89 Bs'),
+      '='.repeat(columnas),
+      centro('Si se lee todo, está lista.'),
+      '',
+    ];
+
+    await this.imprimir(l.join('\n'));
   }
 
   /**

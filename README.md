@@ -37,6 +37,25 @@ botón «Imprimir» del ticket para volver a sacarlo.
 Ante la duda el ancho es 58: un ticket angosto entra en papel de 80 mm, al
 revés se cortan los montos.
 
+**Conectarla en Windows.** La térmica se comparte desde «Impresoras y
+dispositivos» con un nombre sin espacios, y esa es la ruta:
+
+```bash
+IMPRESORA_DESTINO=usb
+IMPRESORA_ANCHO_MM=58
+IMPRESORA_RUTA=\\localhost\TICKETERA
+```
+
+El backend intenta primero escribir directo al recurso compartido y, si la
+cola no lo acepta —depende de cómo esté publicada—, cae a volcar el trabajo a
+un temporal y copiarlo con `copy /b`, que es la vía que siempre funciona.
+
+Hay que **reiniciar el backend** después de tocar el `.env`. Configuración ›
+Impresora muestra qué quedó configurado e imprime una página de prueba: trae
+una regla de ancho —si el último número no entra, el papel no es el que dice
+la configuración— y una línea de acentos, que salen mal si la impresora no
+tomó la tabla PC850.
+
 ## Cómo arrancar
 
 ```bash
