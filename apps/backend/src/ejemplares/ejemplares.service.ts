@@ -33,9 +33,23 @@ export class EjemplaresService {
       );
     }
 
-    return this.prisma.ejemplar.create({
-      data: { carreraId, numero: dto.numero, nombre: enMayusculas(dto.nombre) },
-    });
+    try {
+      return await this.prisma.ejemplar.create({
+        data: { carreraId, numero: dto.numero, nombre: enMayusculas(dto.nombre) },
+      });
+    } catch (causa) {
+      // El chequeo de arriba cubre el caso normal, pero entre leer y escribir
+      // entra otra petición: cargando ejemplares a los saltos la pantalla
+      // llegaba a mandar el mismo número dos veces, las dos pasaban el
+      // chequeo y la segunda reventaba con un 500 y el stack entero. Es la
+      // misma condición de siempre, así que se responde lo mismo.
+      if ((causa as { code?: string }).code === 'P2002') {
+        throw new BadRequestException(
+          `El número ${dto.numero} ya está cargado en esta carrera.`,
+        );
+      }
+      throw causa;
+    }
   }
 
   /**

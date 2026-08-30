@@ -32,6 +32,8 @@ export function Ejemplares() {
   const cantidad = Math.max(1, Number(cantidadTexto) || 1);
   const [borradores, setBorradores] = useState<Record<number, string>>({});
   const inputs = useRef<Record<number, HTMLInputElement | null>>({});
+  /** Filas con un alta ya despachada, para no mandarla dos veces. */
+  const enVuelo = useRef<Set<number>>(new Set());
 
   // Sólo al cambiar de carrera. Antes dependía también de cuántos había
   // cargados, así que cada caballo que se daba de alta volvía a disparar el
@@ -45,6 +47,12 @@ export function Ejemplares() {
     mutationFn: ({ numero, nombre }: { numero: number; nombre: string }) =>
       api.ejemplares.crear(carreraId!, numero, nombre),
     onSuccess: () => carreraId && qc.invalidateQueries({ queryKey: claveCarrera(carreraId) }),
+    // Sin esto el fallo era invisible: react-query se lo tragaba y el
+    // operador seguía cargando creyendo que el caballo había entrado.
+    onError: (e) => avisar.error(
+      'No se pudo cargar el ejemplar',
+      e instanceof Error ? e.message : 'Error inesperado.',
+    ),
   });
 
   // Retirar genera el reembolso de lo ya cobrado y reponer lo borra: los
@@ -101,6 +109,12 @@ export function Ejemplares() {
     const nombre = (borradores[numero] ?? '').trim();
     const existente = carrera?.ejemplares.find((x) => x.numero === numero);
 
+    // Cinturón: si esta fila ya tiene un alta en vuelo, no se manda otra.
+    // Va en un ref y no en estado porque `setBorradores` no se aplica hasta
+    // el próximo render, y dos llamadas en el mismo tick ven el mismo
+    // borrador: el estado no alcanza para frenar la segunda.
+    if (nombre && !existente && enVuelo.current.has(numero)) return;
+
     // Sin borrador no hay nada que hacer. Vaciar el campo de un ejemplar ya
     // cargado tampoco lo borra: para sacarlo de la carrera está Retirar,
     // que anula sus jugadas y arma el reembolso.
@@ -112,7 +126,10 @@ export function Ejemplares() {
     if (existente) {
       if (nombre !== existente.nombre) renombrar.mutate({ id: existente.id, nombre });
     } else {
-      crear.mutate({ numero, nombre });
+      enVuelo.current.add(numero);
+      crear.mutate({ numero, nombre }, {
+        onSettled: () => enVuelo.current.delete(numero),
+      });
     }
     olvidarBorrador(numero);
   }
@@ -189,6 +206,18 @@ export function Ejemplares() {
                         // En mayúsculas desde la primera tecla: es como
                         // se guarda y como se ve en el tablero y el TV.
                         onChange={(ev) => setBorradores((b) => ({ ...b, [n]: ev.target.value.toUpperCase() }))}
+                        // Guardar cuelga SÓLO del blur, nunca de la tecla.
+                        //
+                        // Antes Enter y Tab llamaban a guardar() y además
+                        // movían el foco, y ese movimiento dispara el blur
+                        // del campo que se deja: se mandaban dos altas del
+                        // mismo ejemplar. Las dos leían «¿ya existe?» antes
+                        // de que ninguna escribiera, así que las dos pasaban
+                        // el chequeo, la primera creaba y la segunda chocaba
+                        // contra el índice único. El caballo quedaba bien
+                        // cargado y el log se llenaba de errores en rojo.
+                        //
+                        // Moviendo el foco alcanza: el blur guarda solo.
                         onBlur={() => guardar(n)}
                         onKeyDown={(ev) => {
                           if (ev.key === 'Escape') {
@@ -197,12 +226,15 @@ export function Ejemplares() {
                             (ev.target as HTMLInputElement).blur();
                             return;
                           }
-                          if (ev.key === 'Enter' || ev.key === 'Tab') {
-                            guardar(n);
-                            if (ev.key === 'Enter') {
-                              ev.preventDefault();
-                              inputs.current[n + 1]?.focus();
-                            }
+                          // Tab se deja pasar: mueve el foco solo, y con eso
+                          // el blur ya guarda esta fila.
+                          if (ev.key === 'Enter') {
+                            ev.preventDefault();
+                            const siguiente = inputs.current[n + 1];
+                            // En la última fila no hay a dónde saltar, así que
+                            // se suelta el foco a mano para que igual guarde.
+                            if (siguiente) siguiente.focus();
+                            else (ev.target as HTMLInputElement).blur();
                           }
                         }}
                         className={`w-full rounded border border-transparent bg-transparent px-2
