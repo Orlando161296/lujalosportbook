@@ -4,11 +4,10 @@ version = "0.1.0"
 description = "Sistema de apuestas hípicas Lujalo — taquilla + pizarra pública"
 edition = "2021"
 
-# NOTA: no se pudo compilar en este sandbox (sin GTK/WebKit del sistema ni
-# forma práctica de instalarlos aquí). Las versiones exactas de tauri/serde
-# deben confirmarse contra `cargo add tauri@2` en la máquina real de
-# desarrollo antes del primer build — esto es un punto de partida, no un
-# Cargo.lock verificado.
+# Las versiones quedan fijadas en Cargo.lock, que SÍ se versiona: el binario
+# de la máquina que compila y el de la que clona salen de las mismas fuentes.
+# Compilado y corriendo en Linux con tauri 2.11.5. En Windows hace falta el
+# toolchain MSVC y los Build Tools de Visual Studio — ver el README.
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

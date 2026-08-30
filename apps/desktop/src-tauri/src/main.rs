@@ -4,11 +4,7 @@
 // guarda el administrador la primera vez (pantalla 5 del wireframe:
 // "Configuración de pantallas").
 //
-// NO compilado en este sandbox — sin GTK/WebKit del sistema disponibles
-// aquí. Los nombres exactos de los métodos de la API de monitores/ventanas
-// deben verificarse contra la versión de Tauri 2.x que se fije en
-// Cargo.toml al primer build real; la lógica y el orden de los pasos sí
-// reflejan la decisión de arquitectura ya acordada.
+// Compila y corre contra tauri 2.11.5 (la versión fijada en Cargo.lock).
 
 use serde::{Deserialize, Serialize};
 use std::fs;

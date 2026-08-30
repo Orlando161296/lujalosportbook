@@ -57,19 +57,37 @@ npm run tauri dev
 plata del local—, así que un clon recién bajado no arranca solo. Es
 idempotente: si ya hay `.env` lo respeta.
 
-### En una máquina nueva (Windows)
+### Compilar la app de escritorio en Windows
 
 `npm install` **no alcanza** para `npm run tauri dev`: Tauri compila un
-binario nativo y necesita instaladas, además de Node,
+binario nativo. Se instala una vez, en este orden —Rust necesita el
+compilador de C++ ya presente para configurarse bien:
 
-- **Rust** (`rustup`, toolchain `stable-msvc`),
-- **Visual Studio Build Tools** con «Desarrollo para escritorio con C++»,
-- **WebView2** — ya viene con Windows 11 y con Edge actualizado.
+1. **Visual Studio Build Tools 2022** — en el instalador, marcar la carga de
+   trabajo **«Desarrollo para el escritorio con C++»**. Es lo que trae
+   `link.exe` y el Windows SDK. Es la parte pesada (varios GB).
+2. **Rust**, desde <https://rustup.rs>. En Windows el toolchain por defecto
+   ya es `stable-msvc`, que es el que hace falta. Verificar con
+   `rustc -Vv`: la línea `host` tiene que decir `x86_64-pc-windows-msvc`.
+   Si dijera `-gnu`, corregir con `rustup default stable-msvc`.
+3. **WebView2** — ya viene con Windows 11 y con Windows 10 actualizado. Si
+   falta, el «Evergreen Bootstrapper» de Microsoft.
 
-Si sólo se quiere ver la interfaz sin pelear con eso, `npm run dev` en
-`apps/desktop` la sirve en el navegador y no necesita nada de lo anterior:
-`?ventana=taquilla` y `?ventana=pizarra` abren cada una en su pestaña. El
-backend sí hace falta en los dos casos.
+Después, con el backend corriendo en otra terminal:
+
+```bash
+cd apps/desktop
+npm install
+npm run tauri dev
+```
+
+La primera compilación baja y construye unos cientos de crates: tarda
+bastante y no vuelve a pasar. `npm run tauri build` genera el instalador
+`.msi`/`.nsis` en `src-tauri/target/release/bundle/`.
+
+**Si sólo se quiere ver la interfaz**, `npm run dev` la sirve en el navegador
+sin nada de lo anterior: `?ventana=taquilla` y `?ventana=pizarra` abren cada
+una en su pestaña. El backend sí hace falta en los dos casos.
 
 Usuario inicial: **admin** / **lujalo2026**. Todo lo demás —hipódromos,
 taquillas, clientes, jornadas y la tasa del día— se carga desde las pantallas
