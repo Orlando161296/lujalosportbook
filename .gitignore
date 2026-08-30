@@ -1,0 +1,10 @@
+node_modules/
+dist/
+target/
+# La base y todo lo que derive de ella: respaldos (dev.db.respaldo-…) y los
+# temporales de SQLite (-journal, -wal, -shm). El patrón lleva el asterisco
+# final porque «*.db» no alcanzaba y los respaldos —con jugadas, clientes y
+# plata del local adentro— se estaban por subir al repo.
+*.db*
+.env
+apps/desktop/src-tauri/target/

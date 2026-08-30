@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lujalo Sportsbook",
+  "version": "0.1.0",
+  "identifier": "com.lujalo.sportsbook",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "taquilla",
+        "title": "Lujalo — Taquilla",
+        "url": "index.html",
+        "width": 1280,
+        "height": 720,
+        "minWidth": 1024,
+        "minHeight": 620,
+        "visible": false,
+        "resizable": true,
+        "maximized": true
+      },
+      {
+        "label": "pizarra",
+        "title": "Lujalo — Pizarra Pública",
+        "url": "index.html",
+        "width": 1920,
+        "height": 1080,
+        "visible": false,
+        "decorations": false,
+        "resizable": false,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ]
+  }
+}

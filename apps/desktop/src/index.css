@@ -1,0 +1,98 @@
+/* Las fuentes van empaquetadas, no traídas de un CDN: la app corre en una
+   instalación local que puede quedarse sin internet a mitad de jornada y la
+   pizarra no puede cambiar de tipografía en pantalla. */
+@font-face {
+  font-family: 'Archivo Black';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('./fuentes/archivo-black-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('./fuentes/barlow-condensed-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('./fuentes/barlow-semicondensed-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('./fuentes/barlow-semicondensed-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('./fuentes/barlow-semicondensed-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('./fuentes/barlow-semicondensed-700.woff2') format('woff2');
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-hueso text-tinta font-ui antialiased;
+    /* La app es de escritorio y a pantalla completa: el scroll lo maneja
+       cada pantalla en su panel, nunca el documento. */
+    overflow: hidden;
+    margin: 0;
+  }
+  /* El remate se opera a teclado con las manos ocupadas de efectivo: el foco
+     tiene que verse siempre, y en naranja para no confundirse con el amarillo
+     del botón principal. */
+  :focus-visible {
+    outline: 2px solid theme('colors.naranja');
+    outline-offset: 2px;
+  }
+  /* Los montos alinean por dígito o el operador lee mal al cantar el cobro. */
+  .plata {
+    @apply font-mono tabular-nums;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  .etiqueta {
+    @apply text-[11px] uppercase tracking-[0.11em] text-gris font-semibold;
+  }
+  .tarjeta {
+    @apply bg-white border border-borde rounded;
+  }
+  .barra-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.borde.fuerte') transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

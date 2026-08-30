@@ -1,0 +1,378 @@
+// Esquema derivado del modelo de datos acordado:
+// https://claude.ai/code/artifact/98fe9ca1-7701-47a8-83eb-4834f005fba2
+// ampliado con las entidades que exigen los wireframes de alta fidelidad:
+// https://claude.ai/code/artifact/25a5ce50-d120-402b-ae52-fa69f9e90866
+//
+// v1: SQLite, un solo proceso backend (ver "camino de crecimiento" en el doc
+// del modelo — migrar a Postgres es solo cambiar el datasource si algún día
+// hace falta una segunda PC con su propio backend).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// NOTA: SQLite no soporta enums nativos, y Prisma por lo tanto tampoco los
+// permite con este connector. Los campos que en el modelo de datos son
+// enumeraciones quedan como String, y el conjunto de valores válidos se
+// valida en la capa de DTOs con `@IsIn([...])` de class-validator (que es
+// como ya estaba escrito el código). Los valores permitidos de cada uno
+// quedan documentados en el comentario sobre el campo correspondiente.
+//
+// El día que se migre a Postgres (ver "camino de crecimiento" en el doc del
+// modelo) estos pueden volver a ser enums de verdad sin tocar el código.
+
+// El puesto físico desde el que se rematan jugadas. El resumen del día se
+// desglosa por taquilla (wireframe 6c) y el login pide cuál se está
+// ocupando (4a), así que la jugada guarda desde dónde se registró.
+model Taquilla {
+  id     Int     @id @default(autoincrement())
+  nombre String  @unique
+  activa Boolean @default(true)
+
+  usuarios Usuario[]
+  jugadas  Jugada[]
+  tickets  Ticket[]
+
+  @@map("taquillas")
+}
+
+model Usuario {
+  id           Int       @id @default(autoincrement())
+  nombre       String
+  usuario      String    @unique
+  passwordHash String
+  /// 'admin' | 'operador'
+  rol          String
+  activo       Boolean   @default(true)
+  taquillaId   Int?
+  taquilla     Taquilla? @relation(fields: [taquillaId], references: [id])
+  creadoEn     DateTime  @default(now())
+
+  // Permisos extra por encima del rol (wireframe 5b). El rol define la base;
+  // estos afinan caso por caso sin inventar roles nuevos.
+  puedeAnularJugadasPropias Boolean @default(true)
+  puedeAnularJugadasDeOtros Boolean @default(false)
+  puedeCambiarTasa          Boolean @default(false)
+  puedeCerrarCarrera        Boolean @default(false)
+  puedeVerResumen           Boolean @default(false)
+
+  carrerasCreadas    Carrera[]    @relation("CarreraCreadaPor")
+  jugadasRegistradas Jugada[]     @relation("JugadaRegistradaPor")
+  ticketsEmitidos    Ticket[]     @relation("TicketEmitidoPor")
+  clientesCreados    Cliente[]    @relation("ClienteCreadoPor")
+  tasasRegistradas   TasaCambio[] @relation("TasaRegistradaPor")
+
+  @@map("usuarios")
+}
+
+// Se registra una vez (wireframe 5c). Las carreras concretas de cada día
+// se abren desde Jornada, no acá.
+model Hipodromo {
+  id                   Int     @id @default(autoincrement())
+  nombre               String  @unique
+  ciudad               String?
+  tablasPorCarrera     Int     @default(3)
+  disponibleParaRemate Boolean @default(true)
+  activo               Boolean @default(true)
+
+  jornadas Jornada[]
+  carreras Carrera[]
+
+  @@map("hipodromos")
+}
+
+// Un día de remate en un hipódromo (wireframe 5e). Los días que corre y
+// cuántas carreras varían jornada a jornada, por eso es entidad propia y no
+// un campo derivado de Carrera.
+model Jornada {
+  id               Int       @id @default(autoincrement())
+  hipodromoId      Int
+  hipodromo        Hipodromo @relation(fields: [hipodromoId], references: [id])
+  fecha            DateTime
+  cantidadCarreras Int
+  /// 'planificada' | 'abierta' | 'cerrada'
+  estado           String    @default("planificada")
+  cerradaEn        DateTime?
+  creadoEn         DateTime  @default(now())
+
+  carreras Carrera[]
+
+  @@unique([hipodromoId, fecha])
+  @@map("jornadas")
+}
+
+// Registro de vigencia, no una fila fija por día — ver modelo de datos.
+// La tasa aplicable en un momento dado es la fila con vigenteDesde más
+// reciente que sea <= ese momento (resuelto en TasaService, no con un FK).
+model TasaCambio {
+  id              Int      @id @default(autoincrement())
+  vigenteDesde    DateTime
+  valorBsPorUsd   Decimal
+  /// 'manual' | 'api'
+  origen          String   @default("manual")
+  // Al abrir la primera carrera la tasa se congela para toda la jornada,
+  // para que un cobro no se calcule con una tasa distinta a la del remate.
+  bloqueada       Boolean  @default(false)
+  registradoPorId Int
+  registradoPor   Usuario  @relation("TasaRegistradaPor", fields: [registradoPorId], references: [id])
+  creadoEn        DateTime @default(now())
+
+  @@map("tasas_cambio")
+}
+
+model Carrera {
+  id            Int       @id @default(autoincrement())
+  hipodromoId   Int
+  hipodromo     Hipodromo @relation(fields: [hipodromoId], references: [id])
+  jornadaId     Int?
+  jornada       Jornada?  @relation(fields: [jornadaId], references: [id])
+  fecha         DateTime
+  numero        Int
+  nombre        String?
+  /// 'planificada' | 'abierta' | 'cerrada'
+  estado        String    @default("planificada")
+  creadoPorId   Int
+  creadoPor     Usuario   @relation("CarreraCreadaPor", fields: [creadoPorId], references: [id])
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  ejemplares Ejemplar[]
+  tablas     Tabla[]
+  cobros     Cobro[]
+  tickets    Ticket[]
+  ganadores  CarreraGanador[]
+
+  @@unique([hipodromoId, fecha, numero])
+  @@map("carreras")
+}
+
+model Ejemplar {
+  id            Int       @id @default(autoincrement())
+  carreraId     Int
+  carrera       Carrera   @relation(fields: [carreraId], references: [id])
+  numero        Int
+  nombre        String
+  /// 'activo' | 'retirado'
+  estado        String    @default("activo")
+  retiradoEn    DateTime?
+  retiradoPorId Int?
+
+  jugadas     Jugada[]
+  comoGanador CarreraGanador[]
+
+  @@unique([carreraId, numero])
+  @@map("ejemplares")
+}
+
+// Color de gualdrapa por número — el estándar internacional del hipismo.
+// NO es una decisión de diseño: el público reconoce al ejemplar por el color
+// de su gualdrapa antes que por el número, así que estos valores se siembran
+// y sólo se editan si un hipódromo puntual usa otro orden.
+model ColorNumero {
+  numero   Int    @id
+  nombre   String
+  colorHex String
+  // Color del número encima de la gualdrapa: los fondos claros (blanco,
+  // amarillo, rosado) necesitan texto oscuro para seguir siendo legibles
+  // desde el fondo del salón.
+  textoHex String @default("#FFFFFF")
+
+  @@map("colores_numero")
+}
+
+model Tabla {
+  id           Int       @id @default(autoincrement())
+  carreraId    Int
+  carrera      Carrera   @relation(fields: [carreraId], references: [id])
+  etiqueta     String
+  poteCasa     Decimal   @default(0)
+  comisionPct  Decimal   @default(30)
+  /// 'abierta' | 'cerrada'
+  estado       String    @default("abierta")
+  cerradaEn    DateTime?
+  cerradaPorId Int?
+
+  jugadas Jugada[]
+
+  @@unique([carreraId, etiqueta])
+  @@map("tablas")
+}
+
+// A nivel de carrera, no de tabla: el resultado de la carrera es un solo
+// hecho físico, compartido por las 3 tablas. Ver nota en el modelo de datos.
+model CarreraGanador {
+  carreraId  Int
+  carrera    Carrera  @relation(fields: [carreraId], references: [id])
+  ejemplarId Int
+  ejemplar   Ejemplar @relation(fields: [ejemplarId], references: [id])
+
+  @@id([carreraId, ejemplarId])
+  @@map("carrera_ganadores")
+}
+
+model Cliente {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  // Nombre corto que va en la pizarra pública y autocompleta el campo
+  // JUGADOR del remate (wireframe 5d). Si está vacío se usa `nombre`.
+  nombrePizarra String?
+  telefono      String?
+  notas         String?
+  activo        Boolean  @default(true)
+  creadoPorId   Int
+  creadoPor     Usuario  @relation("ClienteCreadoPor", fields: [creadoPorId], references: [id])
+  creadoEn      DateTime @default(now())
+
+  // --- Condiciones VIP (wireframe 5d) ---
+  esVip            Boolean  @default(false)
+  /// null para clientes normales; p. ej. 'oro' | 'plata' | 'bronce'
+  nivel            String?
+  limiteCreditoBs  Decimal  @default(0)
+  // Si está seteada, se usa en vez de la tasa del día para este cliente.
+  tasaPreferencial Decimal?
+  descuentoPct     Decimal  @default(0)
+
+  puedeCreditoEnRemate    Boolean @default(false)
+  descontarDeudaDelPremio Boolean @default(true)
+  puedePagarUsd           Boolean @default(false)
+  resaltadoEnPizarra      Boolean @default(false)
+
+  jugadas Jugada[]
+  cobros  Cobro[]
+  tickets Ticket[]
+
+  @@map("clientes")
+}
+
+// Comprobante impreso de 80 mm (wireframe 4d). Agrupa todas las jugadas que
+// un cliente se llevó en una carrera; el número correlativo es lo que se
+// busca en el historial y lo que el cliente presenta para cobrar.
+model Ticket {
+  id           Int       @id @default(autoincrement())
+  numero       Int       @unique
+  carreraId    Int
+  carrera      Carrera   @relation(fields: [carreraId], references: [id])
+  // Igual que en Cobro: null si el postor jugó sólo con apodo.
+  clienteId    Int?
+  cliente      Cliente?  @relation(fields: [clienteId], references: [id])
+  apodo        String?
+  taquillaId   Int?
+  taquilla     Taquilla? @relation(fields: [taquillaId], references: [id])
+  // Quién lo emitió. Va impreso en el papel («Operador J. Pérez» en el
+  // wireframe aprobado), así que sin guardarlo la reimpresión salía sin
+  // operador y el comprobante dejaba de ser el mismo documento.
+  emitidoPorId Int?
+  emitidoPor   Usuario?  @relation("TicketEmitidoPor", fields: [emitidoPorId], references: [id])
+  totalBs      Decimal
+  /// 'Bs' | 'USD' — divisa en la que efectivamente pagó
+  moneda       String    @default("Bs")
+  tasaAplicada Decimal
+  impresoEn    DateTime?
+  creadoEn     DateTime  @default(now())
+
+  jugadas Jugada[]
+
+  @@map("tickets")
+}
+
+// La apuesta atómica: cliente + ejemplar + UNA tabla + monto.
+// Mecanismo rápido de edición (no estados de puja): mientras el rematador
+// sigue ofreciendo un número hay como máximo una fila 'activa' para ese
+// (tablaId, ejemplarId) — si alguien puja más alto, se EDITA esa misma fila
+// (clienteId + monto), nunca se crea una nueva. Ver PUT /tablas/:id/jugadas/:ejemplarId.
+model Jugada {
+  id         Int      @id @default(autoincrement())
+  tablaId    Int
+  tabla      Tabla    @relation(fields: [tablaId], references: [id])
+  ejemplarId Int
+  ejemplar   Ejemplar @relation(fields: [ejemplarId], references: [id])
+  // Opcional porque un caballo que nadie puja se lo queda la casa
+  // (`esCasa`), y ahí no hay cliente detrás. Ver "JUGÓ LA CASA · caballos
+  // devueltos" en el resumen del día (wireframe 6c). También es null cuando
+  // el postor entró sólo con un apodo.
+  clienteId  Int?
+  cliente    Cliente? @relation(fields: [clienteId], references: [id])
+  // Seudónimo tecleado en el momento — «SILLA ROJA», «BARBA NEGRA». En el
+  // remate no hay tiempo de dar de alta a nadie: el apodo ES la referencia
+  // del postor. Se guarda ya normalizado (ver common/apodos.ts) porque es
+  // la clave con la que se agrupan sus jugadas al cobrar.
+  // Invariante: exactamente uno de {clienteId, apodo, esCasa}.
+  apodo      String?
+  esCasa     Boolean  @default(false)
+
+  monto  Decimal
+  /// 'Bs' | 'USD'
+  moneda String
+  /// 'activa' | 'anulada'
+  estado String  @default("activa")
+
+  taquillaId Int?
+  taquilla   Taquilla? @relation(fields: [taquillaId], references: [id])
+  ticketId   Int?
+  ticket     Ticket?   @relation(fields: [ticketId], references: [id])
+
+  registradaPorId  Int
+  registradaPor    Usuario   @relation("JugadaRegistradaPor", fields: [registradaPorId], references: [id])
+  registradaEn     DateTime  @default(now())
+  actualizadaEn    DateTime?
+  actualizadaPorId Int?
+  anuladaEn        DateTime?
+  anuladaPorId     Int?
+  // Por qué se anuló. Una anulación manual es una corrección del operador y
+  // es definitiva; una por retiro del ejemplar es consecuencia de otro hecho
+  // y se deshace si el caballo se repone. Sin esta marca, reponer no puede
+  // saber cuáles jugadas revivir sin revivir también las que el operador
+  // había anulado a mano.
+  anuladaPorRetiro Boolean   @default(false)
+
+  cobrosJugada CobroJugada[]
+
+  // Único dueño activo por número por tabla — ver modelo de datos.
+  // SQLite no soporta índice único parcial (WHERE estado='activa') de forma
+  // nativa vía Prisma; se aplica en el service con una transacción que
+  // primero anula/reemplaza la fila activa existente antes de insertar.
+  @@index([tablaId, ejemplarId])
+  @@map("jugadas")
+}
+
+model Cobro {
+  id           Int       @id @default(autoincrement())
+  // Null cuando el cobro es de un postor por apodo, que no está registrado.
+  clienteId    Int?
+  cliente      Cliente?  @relation(fields: [clienteId], references: [id])
+  // Apodo normalizado del postor sin registrar. El alcance es la carrera:
+  // «BARBA NEGRA» de mañana no es el mismo cobro que el de hoy.
+  apodo        String?
+  carreraId    Int
+  carrera      Carrera   @relation(fields: [carreraId], references: [id])
+  /// 'cobro_apuesta' | 'pago_premio' | 'reembolso'
+  tipo         String
+  monto        Decimal
+  /// 'Bs' | 'USD'
+  moneda       String
+  tasaAplicada Decimal?
+  pagado       Boolean   @default(false)
+  pagadoEn     DateTime?
+  pagadoPorId  Int?
+  creadoEn     DateTime  @default(now())
+
+  jugadasCubiertas CobroJugada[]
+
+  @@map("cobros")
+}
+
+model CobroJugada {
+  cobroId       Int
+  cobro         Cobro   @relation(fields: [cobroId], references: [id])
+  jugadaId      Int
+  jugada        Jugada  @relation(fields: [jugadaId], references: [id])
+  montoCubierto Decimal
+
+  @@id([cobroId, jugadaId])
+  @@map("cobro_jugadas")
+}
