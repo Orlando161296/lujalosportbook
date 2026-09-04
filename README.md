@@ -94,7 +94,17 @@ cd apps/desktop
 npm run instalador     # empaqueta el backend y arma el .msi
 ```
 
-Queda en `src-tauri/target/release/bundle/`.
+Queda en `src-tauri/target/release/bundle/`. `npm run instalador:nsis` arma
+sólo el NSIS, que es el que conviene: son unos 7.500 archivos y el MSI, que
+genera un componente de WiX por archivo, es mucho más lento y frágil con ese
+volumen.
+
+**La PC del local no necesita internet.** El instalador lleva el runtime de
+WebView2 adentro (`webviewInstallMode: offlineInstaller`, unos 127 MB más),
+así que instala sin conexión; con el default de Tauri se lo bajaría de
+Microsoft durante la instalación. La interfaz tampoco pide nada de afuera: las
+tipografías van empaquetadas y todo el tráfico es contra localhost. La máquina
+que **compila** sí necesita conexión, para bajar ese instalador una vez.
 
 **Hay que compilarlo en la máquina destino.** El motor de consultas de Prisma
 es un binario por sistema operativo (`query_engine-windows.dll.node` en
