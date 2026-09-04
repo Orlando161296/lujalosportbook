@@ -1,0 +1,29 @@
+# Nombre estable para la ticketera térmica: /dev/ticketera
+#
+# El kernel numera los dispositivos usblp por orden de conexión, no por
+# impresora: la misma térmica es /dev/usb/lp0 hoy y /dev/usb/lp1 mañana si
+# alguien la desenchufa y la vuelve a enchufar con otra cosa en el medio.
+# Cuando eso pasa, IMPRESORA_RUTA apunta a un dispositivo que ya no existe y
+# la impresión empieza a fallar en pleno remate. Esta regla le fija un nombre
+# propio que no depende del orden de conexión.
+#
+# Se empareja por idVendor/idProduct y NO por número de serie a propósito: el
+# día que la térmica se queme y entre otra del mismo modelo tiene que andar
+# sin que nadie edite un archivo en /etc. Si el local llega a tener dos
+# térmicas distintas conectadas a la vez, ahí sí hay que agregar
+# ATTRS{serial} para poder distinguirlas.
+#
+# MODE 0666 y no 0660+GROUP="lp": con el grupo hay que agregar al usuario y
+# volver a entrar a la sesión, y los procesos ya abiertos no lo toman hasta
+# que se reinician. 0666 deja la ticketera escribible apenas se recarga la
+# regla, sin cerrar sesión ni reiniciar el backend. Es el mismo criterio que
+# las reglas de pinpad que ya están en /etc/udev/rules.d de esta máquina. La
+# contra: cualquier proceso de la PC puede mandarle bytes a la impresora —
+# en la PC del local, que sólo corre esto, no cambia nada.
+#
+# Instalar (ver README, «Conectarla en Linux»):
+#   sudo cp 99-ticketera.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# TECH CLA58, 58 mm (lsusb: 6868:0200)
+SUBSYSTEM=="usbmisc", KERNEL=="lp[0-9]*", ATTRS{idVendor}=="6868", ATTRS{idProduct}=="0200", SYMLINK+="ticketera", MODE="0666"

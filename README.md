@@ -37,6 +37,25 @@ botón «Imprimir» del ticket para volver a sacarlo.
 Ante la duda el ancho es 58: un ticket angosto entra en papel de 80 mm, al
 revés se cortan los montos.
 
+**Conectarla en Linux.** El kernel numera las térmicas USB por orden de
+conexión (`/dev/usb/lp0`, `lp1`, …), así que la ruta cambia sola si alguien
+desenchufa y vuelve a enchufar. La regla de udev del repo le fija un nombre
+propio y la deja escribible sin más trámite:
+
+```bash
+sudo cp apps/backend/scripts/99-ticketera.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+```bash
+IMPRESORA_DESTINO=usb
+IMPRESORA_ANCHO_MM=58
+IMPRESORA_RUTA=/dev/ticketera
+```
+
+La regla viene con el vendor/producto de la TECH CLA58 que hay hoy. Otra
+térmica es otro `lsusb` y otra línea; está explicado adentro del archivo.
+
 **Conectarla en Windows.** La térmica se comparte desde «Impresoras y
 dispositivos» con un nombre sin espacios, y esa es la ruta:
 
