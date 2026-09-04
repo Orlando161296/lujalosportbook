@@ -220,3 +220,18 @@ export interface ResultadoCarrera {
   ganadores: Ejemplar[];
   pagos: PagoGanador[];
 }
+
+/** Un aviso del pie de la pizarra, cargado desde Configuración. */
+export interface Promocion {
+  id: number;
+  /** Nombre del archivo en disco. La pantalla no lo usa: se muestra `nombre`. */
+  archivo: string;
+  /** Con el que se subió, para poder reconocerlo en la lista. */
+  nombre: string;
+  mime: string;
+  bytes: number;
+  orden: number;
+  /** Bajada sin borrar: no sale en el televisor pero el archivo sigue cargado. */
+  activa: boolean;
+  creadoEn: string;
+}

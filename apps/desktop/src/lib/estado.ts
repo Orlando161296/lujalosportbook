@@ -12,7 +12,7 @@ export type Seccion = Juego | 'resumen' | 'config';
 export type PantallaRemate = 'tablero' | 'ejemplares' | 'cobros' | 'historial';
 export type PantallaConfig =
   | 'tasa' | 'usuarios' | 'hipodromos' | 'jornadas' | 'clientes' | 'taquillas'
-  | 'impresora';
+  | 'impresora' | 'promociones';
 
 interface EstadoNavegacion {
   seccion: Seccion;

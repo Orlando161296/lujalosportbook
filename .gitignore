@@ -8,3 +8,7 @@ target/
 *.db*
 .env
 apps/desktop/src-tauri/target/
+# Las imágenes promocionales del pie de la pizarra. Son material del local
+# —avisos de patrocinantes— cargado desde Configuración, no código: viven
+# con la base, se respaldan con ella y no tienen por qué viajar en el repo.
+apps/backend/datos/

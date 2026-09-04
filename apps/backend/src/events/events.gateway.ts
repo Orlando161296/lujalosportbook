@@ -123,4 +123,20 @@ export class EventsGateway {
   ) {
     this.server.to(roomCarrera(carreraId)).emit('cobro:marcado_pagado', { carreraId, ...payload });
   }
+
+  /**
+   * Cambió el material promocional del pie de la pizarra.
+   *
+   * Va a todas las ventanas y no a una room de carrera: el televisor tiene
+   * que reaccionar sin importar qué carrera esté mostrando, y quien sube la
+   * imagen está en otra máquina o en el otro monitor, sin forma de avisarle
+   * a la pizarra que refresque.
+   *
+   * Sin payload a propósito: las imágenes son pocas y el cliente rehace el
+   * GET. Mandar la lista por el socket obligaría a mantener dos formas de
+   * armar lo mismo.
+   */
+  promocionesCambiaron() {
+    this.server.emit('promociones:cambiaron');
+  }
 }

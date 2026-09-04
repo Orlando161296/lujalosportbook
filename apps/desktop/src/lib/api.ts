@@ -1,7 +1,7 @@
 // Cliente REST. Un solo lugar que sabe la URL del backend y cómo se ve un
 // error, para que ninguna pantalla arme fetch a mano.
 import type {
-  Carrera, Cliente, Cobro, ColorNumero, Ejemplar, EstadoImpresora, Hipodromo, Jornada, Jugada, Moneda, Pizarra, ResultadoCarrera, Tabla, Taquilla, TasaCambio, Usuario, Ticket,
+  Carrera, Cliente, Cobro, ColorNumero, Ejemplar, EstadoImpresora, Hipodromo, Jornada, Jugada, Moneda, Pizarra, Promocion, ResultadoCarrera, Tabla, Taquilla, TasaCambio, Usuario, Ticket,
 } from './tipos';
 
 // Mismo puerto fijo que usa el sidecar (ver apps/backend/src/main.ts): es lo
@@ -60,6 +60,29 @@ const put = <T>(r: string, cuerpo?: unknown) =>
 const patch = <T>(r: string, cuerpo?: unknown) =>
   pedir<T>(r, { method: 'PATCH', body: cuerpo ? JSON.stringify(cuerpo) : undefined });
 const del = <T>(r: string) => pedir<T>(r, { method: 'DELETE' });
+
+/**
+ * Subida de archivo, por fuera de `pedir`.
+ *
+ * `pedir` fija `Content-Type: application/json` para todo, y en multipart eso
+ * rompe la petición: el navegador tiene que poner el suyo con el `boundary`
+ * que él mismo genera, y un Content-Type escrito a mano lo pisa y deja al
+ * servidor sin poder separar las partes. Por eso este camino arma el fetch
+ * aparte en vez de reusar el de siempre.
+ */
+async function subir<T>(ruta: string, formulario: FormData): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(BASE + ruta, { method: 'POST', body: formulario });
+  } catch {
+    throw new ErrorApi(0, 'No hay conexión con el servidor local.');
+  }
+  if (!res.ok) {
+    const cuerpo = await res.json().catch(() => null);
+    throw new ErrorApi(res.status, cuerpo?.message ?? `Error ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
 
 export const api = {
   auth: {
@@ -205,5 +228,27 @@ export const api = {
         : '';
       return get<T>(`/reportes/resumen-dia${q}`);
     },
+  },
+
+  promociones: {
+    /** Todas, incluidas las bajadas: es la lista de administración. */
+    listar: () => get<Promocion[]>('/promociones'),
+    /** Sólo las que el televisor rota. */
+    activas: () => get<Promocion[]>('/promociones/activas'),
+    /**
+     * La URL de los bytes, para poner en un `<img src>`. No es una petición:
+     * la imagen la pide el navegador solo, y el backend la manda con caché
+     * porque en la pizarra se repite todo el día.
+     */
+    imagen: (id: number) => `${BASE}/promociones/${id}/imagen`,
+    subir: (archivo: File) => {
+      const f = new FormData();
+      f.append('imagen', archivo, archivo.name);
+      return subir<Promocion>('/promociones', f);
+    },
+    /** Bajar o volver a levantar sin perder el archivo. */
+    cambiarActiva: (id: number, activa: boolean) =>
+      patch<Promocion>(`/promociones/${id}`, { activa }),
+    borrar: (id: number) => del<void>(`/promociones/${id}`),
   },
 };

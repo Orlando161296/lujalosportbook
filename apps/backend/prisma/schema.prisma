@@ -376,3 +376,31 @@ model CobroJugada {
   @@id([cobroId, jugadaId])
   @@map("cobro_jugadas")
 }
+
+/// Imágenes promocionales del pie de la pizarra.
+///
+/// La franja de abajo del televisor es espacio vendible —patrocinantes,
+/// avisos de la casa— y quien lo administra es la gente del local, no
+/// alguien que pueda tocar código. Por eso las imágenes se suben desde
+/// Configuración y viven en disco, no dentro de la base: un .db que engorda
+/// con binarios se vuelve lento de respaldar, y el respaldo del día es lo
+/// único que salva una jornada.
+model Promocion {
+  id       Int      @id @default(autoincrement())
+  /// Nombre del archivo en la carpeta de promociones. Lo genera el backend:
+  /// el nombre que trae el navegador no es de fiar como ruta.
+  archivo  String   @unique
+  /// El nombre con el que el usuario la subió, para poder reconocerla en la
+  /// pantalla de administración.
+  nombre   String
+  mime     String
+  bytes    Int
+  /// Orden de aparición en la rotación del pie.
+  orden    Int      @default(0)
+  /// Bajarla sin borrarla: el patrocinante que no renovó este mes puede
+  /// volver el que viene, y su archivo ya está cargado.
+  activa   Boolean  @default(true)
+  creadoEn DateTime @default(now())
+
+  @@map("promociones")
+}

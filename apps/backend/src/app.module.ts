@@ -13,6 +13,7 @@ import { JugadasModule } from './jugadas/jugadas.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { CobrosModule } from './cobros/cobros.module';
 import { CatalogosModule } from './catalogos/catalogos.module';
+import { PromocionesModule } from './promociones/promociones.module';
 import { ReportesModule } from './reportes/reportes.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { ReportesModule } from './reportes/reportes.module';
     CobrosModule,
     ReportesModule,
     CatalogosModule,
+    PromocionesModule,
   ],
 })
 export class AppModule {}

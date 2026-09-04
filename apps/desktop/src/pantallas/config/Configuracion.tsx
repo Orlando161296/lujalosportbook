@@ -17,6 +17,7 @@ const SECCIONES: { id: PantallaConfig; nombre: string }[] = [
   { id: 'impresora', nombre: 'Impresora' },
   { id: 'clientes', nombre: 'Clientes VIP' },
   { id: 'taquillas', nombre: 'Taquillas' },
+  { id: 'promociones', nombre: 'Pizarra · avisos' },
 ];
 
 export function Configuracion() {
@@ -48,6 +49,7 @@ export function Configuracion() {
         {pantallaConfig === 'impresora' && <Impresora />}
         {pantallaConfig === 'clientes' && <Clientes />}
         {pantallaConfig === 'taquillas' && <Taquillas />}
+        {pantallaConfig === 'promociones' && <Promociones />}
       </div>
     </div>
   );
@@ -767,6 +769,159 @@ function Usuarios() {
           </Boton>
         </Panel>
       </div>
+    </>
+  );
+}
+
+/* ─────────────────────── Pizarra · avisos ─────────────────────── */
+
+/**
+ * Los avisos que rotan en el pie del televisor.
+ *
+ * Es la única pantalla de Configuración que administra archivos, y la usa
+ * gente del local sin nadie técnico al lado: por eso el error de formato o
+ * de tamaño se muestra tal cual lo manda el backend —«pesa 12,4 MB y el
+ * máximo son 8 MB»— en vez de un «no se pudo» que obligue a adivinar.
+ *
+ * Bajar (`activa: false`) y borrar son cosas distintas a propósito: el
+ * patrocinante que no renovó este mes puede volver el que viene, y su
+ * imagen ya está cargada.
+ */
+function Promociones() {
+  const qc = useQueryClient();
+  const lista = useQuery({ queryKey: ['promociones'], queryFn: api.promociones.listar });
+  const [entrada, setEntrada] = useState<HTMLInputElement | null>(null);
+
+  const refrescar = () => qc.invalidateQueries({ queryKey: ['promociones'] });
+
+  const subir = useMutation({
+    mutationFn: (archivo: File) => api.promociones.subir(archivo),
+    onSuccess: () => { refrescar(); avisar.exito('Aviso cargado. Ya está en el televisor.'); },
+    onError: (e: Error) => avisar.error(e.message),
+  });
+  const alternar = useMutation({
+    mutationFn: ({ id, activa }: { id: number; activa: boolean }) =>
+      api.promociones.cambiarActiva(id, activa),
+    onSuccess: refrescar,
+    onError: (e: Error) => avisar.error(e.message),
+  });
+  const borrar = useMutation({
+    mutationFn: (id: number) => api.promociones.borrar(id),
+    onSuccess: () => { refrescar(); avisar.exito('Aviso eliminado.'); },
+    onError: (e: Error) => avisar.error(e.message),
+  });
+
+  const activas = (lista.data ?? []).filter((p) => p.activa).length;
+
+  return (
+    <>
+      <Titulo
+        texto="Pizarra · avisos"
+        nota="Las imágenes que rotan en la franja de abajo del televisor. Se muestran una tras otra, en este orden."
+      />
+
+      <div className="flex max-w-[860px] items-center gap-2.5">
+        <input
+          ref={setEntrada}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => {
+            const archivo = e.target.files?.[0];
+            if (archivo) subir.mutate(archivo);
+            // Se limpia para que subir DOS VECES el mismo archivo dispare el
+            // change las dos veces: sin esto la segunda no hace nada y parece
+            // que la pantalla se colgó.
+            e.target.value = '';
+          }}
+        />
+        <Boton tono="oscuro" disabled={subir.isPending} onClick={() => entrada?.click()}>
+          {subir.isPending ? 'Subiendo…' : '+ Subir aviso'}
+        </Boton>
+        {/* La medida va acá y no en un instructivo aparte: es el dato que
+            decide si el aviso se ve bien, y el momento de saberlo es antes de
+            elegir el archivo. La franja es casi 10:1, así que una imagen de
+            proporción común se recorta arriba y abajo para poder llenarla. */}
+        <span className="text-[13px] text-gris">
+          JPG, PNG, WEBP o GIF · hasta 8 MB · <b>1116 × 112 px</b> (franja larga y baja;
+          otras proporciones se recortan arriba y abajo)
+        </span>
+      </div>
+
+      {lista.isPending ? <Cargando /> : (
+        <Panel className="mt-4 max-w-[860px]" cuerpoClassName="p-0">
+          {lista.data?.length === 0 ? (
+            <Vacio
+              titulo="Todavía no hay avisos"
+              detalle="Mientras no haya ninguno, el pie de la pizarra queda con el espacio reservado y vacío."
+            />
+          ) : (
+            <table className="w-full text-sm">
+              <tbody>
+                {(lista.data ?? []).map((p) => (
+                  <tr key={p.id} className="border-b border-borde">
+                    <td className="w-[150px] px-2.5 py-2">
+                      {/* Fondo a cuadros: casi todos los avisos vienen con
+                          transparencia y sobre blanco no se ve dónde termina
+                          la imagen. */}
+                      <div
+                        className="flex h-[52px] w-[130px] items-center justify-center overflow-hidden rounded border border-borde"
+                        style={{
+                          backgroundImage:
+                            'linear-gradient(45deg,#e8e4da 25%,transparent 25%,transparent 75%,#e8e4da 75%),'
+                            + 'linear-gradient(45deg,#e8e4da 25%,transparent 25%,transparent 75%,#e8e4da 75%)',
+                          backgroundSize: '12px 12px',
+                          backgroundPosition: '0 0, 6px 6px',
+                        }}
+                      >
+                        <img
+                          src={api.promociones.imagen(p.id)}
+                          alt={p.nombre}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <div className="font-semibold">{p.nombre}</div>
+                      <div className="text-[13px] text-gris">
+                        {(p.bytes / 1024).toFixed(0)} KB · {fechaCorta(p.creadoEn)}
+                      </div>
+                    </td>
+                    <td className="px-2.5 py-2">
+                      {p.activa ? <Pildora tono="ok">En el TV</Pildora> : <Pildora>Bajada</Pildora>}
+                    </td>
+                    <td className="px-2.5 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Boton onClick={() => alternar.mutate({ id: p.id, activa: !p.activa })}>
+                          {p.activa ? 'Bajar del TV' : 'Poner en el TV'}
+                        </Boton>
+                        {/* Confirmación porque el archivo se va del disco y no
+                            hay papelera: para sacarlo un rato está «Bajar». */}
+                        <Boton
+                          tono="destructivo"
+                          onClick={() => {
+                            if (confirm(`¿Eliminar «${p.nombre}»? Se borra el archivo y no se puede deshacer.`)) {
+                              borrar.mutate(p.id);
+                            }
+                          }}
+                        >
+                          Eliminar
+                        </Boton>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Panel>
+      )}
+
+      {activas === 0 && (lista.data?.length ?? 0) > 0 && (
+        <p className="mt-3 max-w-[860px] text-[13px] text-gris">
+          Todos los avisos están bajados: la franja del televisor se ve vacía.
+        </p>
+      )}
     </>
   );
 }

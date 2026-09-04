@@ -40,4 +40,7 @@ export const EVENTOS = {
   cobroMarcadoPagado: 'cobro:marcado_pagado',
   pizarraCarreraCambiada: 'pizarra:carrera_cambiada',
   jornadaActivaCambiada: 'jornada:activa_cambiada',
+  // Global, sin room: el televisor tiene que enterarse esté en la carrera
+  // que esté, y quien sube el aviso está en la otra ventana o en otra PC.
+  promocionesCambiaron: 'promociones:cambiaron',
 } as const;
