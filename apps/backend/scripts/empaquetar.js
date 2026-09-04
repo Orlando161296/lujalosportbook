@@ -11,14 +11,26 @@
 
 const { execFileSync } = require('node:child_process');
 const { cpSync, existsSync, mkdirSync, rmSync, copyFileSync, writeFileSync } = require('node:fs');
-const { join, resolve } = require('node:path');
+const { isAbsolute, join, resolve } = require('node:path');
 
 const raiz = resolve(__dirname, '..');
 const destino = resolve(raiz, '../desktop/src-tauri/recursos/backend');
 
 const paso = (t) => console.log(`\n\x1b[1m▸ ${t}\x1b[0m`);
+// `shell: true` SÓLO para lo que se resuelve por PATH: en Windows `npm` y
+// `npx` son .cmd y execFile no los ejecuta sin shell.
+//
+// Para una ruta absoluta va apagado. Con shell, execFile arma la línea de
+// comando como TEXTO y no como lista de argumentos, así que
+// `C:\Program Files\nodejs\node.exe` se parte en el espacio y Windows
+// responde «"C:\Program" no se reconoce como un comando interno o externo».
 const correr = (cmd, args, cwd = raiz, env = {}) =>
-  execFileSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, ...env } });
+  execFileSync(cmd, args, {
+    cwd,
+    stdio: 'inherit',
+    shell: process.platform === 'win32' && !isAbsolute(cmd),
+    env: { ...process.env, ...env },
+  });
 
 paso('Limpiando la carpeta de recursos');
 rmSync(destino, { recursive: true, force: true });
