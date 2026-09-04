@@ -37,6 +37,24 @@ function buscarCliente(clientes: Cliente[], escrito: string): Cliente | undefine
 }
 
 
+/**
+ * El monto de una jugada guardada, listo para el campo del formulario.
+ *
+ * Del backend viene como número crudo («12000», «12000.5») y el campo trabaja
+ * con punto de miles y coma decimal. Se pasa por el mismo formateador que usa
+ * el tecleo para que lo precargado se vea idéntico a lo que habría escrito el
+ * operador, y no como un valor de otra procedencia.
+ *
+ * Los céntimos en cero no se escriben: nadie teclea «12.000,00» en el remate.
+ */
+function montoParaEditar(crudo: string): string {
+  const n = Number(crudo);
+  if (!Number.isFinite(n)) return '';
+  const texto = Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.', ',');
+  return formatearMientrasEscribe(texto, texto.length).texto;
+}
+
+
 export function Tablero() {
   const carreraId = useNavegacion((s) => s.carreraId);
   const { usuario } = useSesion();
@@ -119,18 +137,33 @@ export function Tablero() {
     return lista;
   }, [carrera, clientes.data]);
 
-  /** Índice rápido de la jugada activa de cada (tabla, ejemplar). */
+  /**
+   * Índice rápido de la jugada activa de cada (tabla, ejemplar).
+   *
+   * Lleva dos veces el nombre del postor con distinto trabajo: `cliente` es
+   * para mostrar —con «LA CASA» y su guion cuando no hay nada— y `postor` es
+   * el valor que se le carga al campo Jugador, que tiene que quedar vacío en
+   * esos dos casos en vez de con un texto que no se puede volver a guardar.
+   */
   const jugadaDe = useMemo(() => {
-    const m = new Map<string, { monto: string; cliente: string; esCasa: boolean }>();
+    const m = new Map<string, {
+      monto: string; moneda: Moneda; cliente: string; postor: string; esCasa: boolean;
+      ticketId: number | null;
+    }>();
     for (const t of carrera?.tablas ?? []) {
       for (const j of t.jugadas) {
         if (j.estado !== 'activa') continue;
+        const nombre = j.cliente?.nombrePizarra || j.cliente?.nombre || j.apodo || '';
         m.set(`${t.id}:${j.ejemplarId}`, {
           monto: j.monto,
-          cliente: j.esCasa
-            ? 'LA CASA'
-            : (j.cliente?.nombrePizarra || j.cliente?.nombre || j.apodo || '—'),
+          moneda: j.moneda,
+          cliente: j.esCasa ? 'LA CASA' : (nombre || '—'),
+          postor: j.esCasa ? '' : nombre,
           esCasa: j.esCasa,
+          // Para avisar antes de corregir una jugada que ya salió impresa: el
+          // cobro se puede generar con las tablas todavía abiertas, así que
+          // esto no es un caso raro.
+          ticketId: j.ticketId,
         });
       }
     }
@@ -180,27 +213,22 @@ export function Tablero() {
           nombre = apodo.toUpperCase();
         }
       }
+      // Se anota si la celda ya tenía puja ANTES de mandar: después de que la
+      // consulta se refresque, toda jugada parece preexistente y el aviso no
+      // podría distinguir una corrección de un alta.
+      const corregida = editando;
       await api.jugadas.registrar(tabla.id, ejemplar.id, { clienteId, apodo, esCasa, monto: valor, moneda });
-      return { nombre, valor, ejemplar, etiqueta: tabla.etiqueta };
+      return { nombre, valor, ejemplar, etiqueta: tabla.etiqueta, corregida };
     },
-    onSuccess: ({ nombre, valor, ejemplar, etiqueta }) => {
+    onSuccess: ({ nombre, valor, ejemplar, etiqueta, corregida }) => {
       if (carreraId) qc.invalidateQueries({ queryKey: claveCarrera(carreraId) });
       avisar.exito(
-        `${ejemplar.numero} ${ejemplar.nombre} · ${bs(valor)} ${moneda}`,
+        `${corregida ? 'Corregido · ' : ''}${ejemplar.numero} ${ejemplar.nombre} · ${bs(valor)} ${moneda}`,
         `${nombre} · tabla ${etiqueta}`,
       );
-      // Formulario en blanco después de cada jugada. `esCasa` también se
-      // baja: si quedara marcado, la jugada siguiente se le anotaría a la
-      // casa sin que el operador lo pida, y eso es plata mal asignada.
-      // La tabla NO se toca — se sigue cargando en la misma hasta que el
-      // operador decida cambiarla con alt+1/2/3.
-      setMonto('');
-      setNumero('');
-      setJugador('');
-      setEsCasa(false);
-      // Y el foco vuelve al principio de la secuencia, listo para el
-      // siguiente caballo sin tocar el mouse.
-      refNumero.current?.focus();
+      // Formulario en blanco y foco al principio de la secuencia, listo para
+      // el siguiente caballo sin tocar el mouse.
+      limpiarFormulario();
     },
     onError: (e) => avisar.error(
       'No se registró la jugada',
@@ -263,6 +291,35 @@ export function Tablero() {
   const ejemplarPorNumero = (n: number) => carrera.ejemplares.find((e) => e.numero === n);
   const ejemplarElegido = numero ? ejemplarPorNumero(Number(numero)) : undefined;
 
+  /**
+   * La puja que ya existe en la celda que el formulario tiene apuntada.
+   *
+   * Es lo que convierte al formulario en «alta» o en «corrección», y se
+   * deduce en vez de guardarse en un estado aparte: el backend hace upsert
+   * sobre (tabla, ejemplar), así que si acá hay algo, guardar lo reemplaza —
+   * lo diga el botón o no. Antes no lo decía: el panel seguía titulado «Nueva
+   * jugada» y el botón «Crear jugada» mientras por debajo se sobreescribía
+   * una puja, y eso es exactamente el error que se descubre tarde.
+   */
+  const tablaActual = carrera?.tablas[tablaIdx];
+  const jugadaEnFoco = ejemplarElegido && tablaActual
+    ? jugadaDe.get(`${tablaActual.id}:${ejemplarElegido.id}`)
+    : undefined;
+  const editando = jugadaEnFoco != null;
+
+  /** Vuelve al alta en blanco, listo para el caballo siguiente. */
+  const limpiarFormulario = () => {
+    setMonto('');
+    setNumero('');
+    setJugador('');
+    // `esCasa` también se baja: si quedara marcado, la jugada siguiente se le
+    // anotaría a la casa sin que el operador lo pida, y eso es plata mal
+    // asignada. La tabla NO se toca — se sigue cargando en la misma hasta que
+    // el operador la cambie con alt+1/2/3.
+    setEsCasa(false);
+    refNumero.current?.focus();
+  };
+
   return (
     <div className="flex min-h-0 flex-1 gap-3.5 p-3.5">
       {/* ── Izquierda: alta de jugada, retiro y ganador ──
@@ -270,7 +327,21 @@ export function Tablero() {
           (una laptop de 768 px, por ejemplo) y el botón de crear jugada no
           puede quedar nunca fuera del borde. */}
       <div className="barra-scroll flex w-[262px] flex-none flex-col gap-3 overflow-y-auto pr-0.5 xl:w-[296px]">
-        <Panel titulo="Nueva jugada" className="flex-none" cuerpoClassName="p-3 flex flex-col gap-3">
+        <Panel
+          titulo={editando ? `Corrigiendo N° ${numero} · ${tablaActual?.etiqueta ?? ''}` : 'Nueva jugada'}
+          extra={editando ? (
+            <button
+              type="button"
+              onClick={limpiarFormulario}
+              className="text-[10.5px] font-bold uppercase tracking-wider text-gris-claro
+                hover:text-amarillo"
+            >
+              Cancelar
+            </button>
+          ) : undefined}
+          className="flex-none"
+          cuerpoClassName="p-3 flex flex-col gap-3"
+        >
           {/* El orden es el del remate cantado: primero se sabe QUÉ caballo
               está en juego, después quién se lo lleva y recién al final en
               cuánto cerró. Enter avanza de campo y sólo graba en el último,
@@ -409,6 +480,34 @@ export function Tablero() {
             </div>
           </Campo>
 
+          {/* Lo que hay guardado hoy en esa celda, mientras el operador
+              escribe encima. Sirve para dos cosas: confirmar que está parado
+              en la jugada que quería arreglar —el número y la tabla son
+              fáciles de errar— y ver qué decía, que es lo que el cliente está
+              reclamando en el mostrador. */}
+          {jugadaEnFoco && (
+            <p className={`rounded border px-2 py-1.5 text-[12px] leading-snug
+              ${jugadaEnFoco.ticketId != null
+                ? 'border-rojo/50 bg-rojo/10 text-tinta'
+                : 'border-amarillo/40 bg-amarillo/10 text-humo'}`}>
+              Ahora dice{' '}
+              <b className="plata text-tinta">{bs(jugadaEnFoco.monto)} {jugadaEnFoco.moneda}</b>
+              {' · '}
+              <b className="text-tinta">{jugadaEnFoco.cliente}</b>.{' '}
+              {jugadaEnFoco.ticketId != null ? (
+                // El ticket guarda su propio total y no se recalcula solo: si
+                // se corrige la jugada, el papel que tiene el cliente en la
+                // mano deja de coincidir con el sistema. No se bloquea —a
+                // veces corregir es justamente lo que hay que hacer— pero el
+                // operador tiene que saber que después le toca reimprimir.
+                <b className="text-rojo">
+                  Ya salió en un ticket impreso: si la corregís, hay que
+                  reimprimirlo.
+                </b>
+              ) : 'Guardar reemplaza esa puja.'}
+            </p>
+          )}
+
           <Boton
             tono="principal"
             ancho
@@ -417,7 +516,9 @@ export function Tablero() {
             disabled={registrar.isPending}
             onClick={() => registrar.mutate()}
           >
-            {registrar.isPending ? 'Registrando…' : 'Crear jugada'}
+            {registrar.isPending
+              ? 'Guardando…'
+              : editando ? 'Guardar corrección' : 'Crear jugada'}
           </Boton>
         </Panel>
 
@@ -497,9 +598,38 @@ export function Tablero() {
           onElegir={(n, idx) => {
             setNumero(String(n));
             // Tocar una celda de T2 elige el caballo Y la tabla: es el gesto
-            // completo, y deja el formulario pidiendo sólo jugador y monto.
+            // completo.
             if (idx != null) setTablaIdx(idx);
-            refJugador.current?.focus();
+
+            // Y el formulario pasa a ser el espejo de esa celda.
+            //
+            // Si ya tiene puja se precarga con lo que dice. Tocarla es «vengo
+            // a arreglar esto», y antes abría los campos en blanco: para
+            // corregir un nombre mal escrito había que reescribir además el
+            // monto de memoria, mirando la grilla de reojo. Ese rodeo es el
+            // que metía el segundo error encima del primero.
+            //
+            // Si está vacía se limpian. Dejar lo que había quedado tecleado
+            // para otro caballo es la forma más fácil de anotarle la plata al
+            // equivocado.
+            const tabla = idx != null ? carrera.tablas[idx] : carrera.tablas[tablaIdx];
+            const ej = carrera.ejemplares.find((e) => e.numero === n);
+            const previa = tabla && ej ? jugadaDe.get(`${tabla.id}:${ej.id}`) : undefined;
+
+            setMonto(previa ? montoParaEditar(previa.monto) : '');
+            setJugador(previa?.postor ?? '');
+            setEsCasa(previa?.esCasa ?? false);
+            if (previa) setMoneda(previa.moneda);
+
+            // Foco al monto —lo primero de la cadena después del número— y
+            // seleccionado, no con el cursor al final: en una corrección la
+            // primera tecla tiene que reemplazar la cifra vieja entera, no
+            // pegarse detrás de ella. El `requestAnimationFrame` espera al
+            // re-render, si no se selecciona el valor anterior.
+            requestAnimationFrame(() => {
+              refMonto.current?.focus();
+              refMonto.current?.select();
+            });
           }}
         />
       </Panel>
