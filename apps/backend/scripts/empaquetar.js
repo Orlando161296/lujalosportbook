@@ -24,6 +24,15 @@ paso('Limpiando la carpeta de recursos');
 rmSync(destino, { recursive: true, force: true });
 mkdirSync(destino, { recursive: true });
 
+// ANTES de compilar, no después. Los tipos del cliente generado son lo que
+// hace que `prisma.promocion` exista para TypeScript: en un clon recién bajado
+// —o en uno cuyo cliente quedó de antes de la última migración— `nest build`
+// falla con «Property 'promocion' does not exist on type 'PrismaService'», que
+// no da ninguna pista de que lo que falta es generar. El `prisma generate` de
+// más abajo es otro: ese es para la copia empaquetada.
+paso('Cliente de Prisma del árbol de desarrollo');
+correr('npx', ['prisma', 'generate']);
+
 paso('Compilando el backend');
 correr('npm', ['run', 'build']);
 if (!existsSync(join(raiz, 'dist', 'main.js'))) {
