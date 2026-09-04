@@ -92,6 +92,7 @@ function normalizar(v: Partial<ConfigGuardable>, base: ConfigImpresora): ConfigI
     v.destino === 'usb' || v.destino === 'red' || v.destino === 'log' ? v.destino : base.destino;
   // 58 u 80 y nada más: son los dos anchos que el render sabe maquetar.
   const anchoMm = v.anchoMm == null ? base.anchoMm : (Number(v.anchoMm) >= 80 ? 80 : 58);
+  const cambioElAncho = anchoMm !== base.anchoMm;
 
   return {
     destino,
@@ -100,9 +101,19 @@ function normalizar(v: Partial<ConfigGuardable>, base: ConfigImpresora): ConfigI
     ruta: v.ruta === undefined ? base.ruta : (v.ruta?.trim() || null),
     host: v.host === undefined ? base.host : (v.host?.trim() || null),
     puerto: v.puerto == null ? base.puerto : numero(String(v.puerto), base.puerto),
-    // El default del corte sigue al ancho —las 80 mm traen guillotina y las
-    // 58 de gama baja no—, pero sólo mientras nadie lo haya elegido a mano.
-    corta: v.corta == null ? anchoMm >= 80 : Boolean(v.corta),
+    // El corte sigue al ancho SÓLO cuando el ancho cambia: las 80 mm traen
+    // guillotina y las 58 de gama baja no, así que al cambiar de impresora ese
+    // es el valor que acierta casi siempre.
+    //
+    // El resto del tiempo se respeta lo que haya. Antes se recalculaba en cada
+    // guardado, y como la pantalla guarda de a partes —elegir la impresora es
+    // una acción, tildar la guillotina es otra—, marcarla en una térmica de 58
+    // que sí corta y después cambiarle la ruta la desmarcaba sola. Al revés es
+    // peor: una de 80 sin guillotina volvía a recibir el comando de corte, que
+    // es justo lo que puede dejarla colgada.
+    corta: v.corta != null
+      ? Boolean(v.corta)
+      : (cambioElAncho ? anchoMm >= 80 : base.corta),
     avance: v.avance == null ? base.avance : Math.min(20, Math.max(0, Number(v.avance) || 0)),
     timeoutMs: v.timeoutMs == null ? base.timeoutMs : numero(String(v.timeoutMs), base.timeoutMs),
   };
