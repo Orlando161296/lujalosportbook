@@ -202,24 +202,35 @@ function Remate() {
   );
 }
 
-/** Trae al frente la ventana de la pizarra sin salir del remate. */
+/**
+ * Abre la pizarra en el televisor, o la trae al frente si ya está.
+ *
+ * La ventana no existe hasta que alguien toca este botón: no está declarada
+ * en tauri.conf.json y el Rust no la crea al arrancar. Antes nacía con la
+ * app y se quedaba prendida toda la jornada aunque no hubiera nada que
+ * mostrar, y eso son un webview entero, su propio árbol de React y una
+ * segunda conexión de socket corriendo de gratis en la PC del local.
+ *
+ * Este camino ya existía para reabrirla después de cerrarla con Escape; lo
+ * único que cambió es que ahora es también el primero.
+ */
 async function abrirPizarra() {
   try {
     const { getAllWebviewWindows, WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
     const ventanas = await getAllWebviewWindows();
     const pizarra = ventanas.find((v) => v.label === 'pizarra');
 
-    // Existe todavía: sólo hay que traerla al frente.
+    // Ya está abierta: sólo hay que traerla al frente. Sin aviso, porque el
+    // operador está mirando el televisor y ya vio lo que pasó.
     if (pizarra) {
       await pizarra.show();
       await pizarra.setFocus();
       return;
     }
 
-    // Cerrarla la destruye, y entonces deja de aparecer en la lista. Antes
-    // el botón no hacía nada en ese caso —ni abría ni avisaba— y la única
-    // salida era reiniciar la app en medio de la jornada. Se vuelve a crear
-    // con la misma configuración que le da el Rust al arrancar.
+    // No hay ventana: se crea. Es el caso de siempre la primera vez de la
+    // jornada, y también después de cerrarla con Escape —cerrarla la
+    // destruye y deja de aparecer en la lista.
     const { availableMonitors, currentMonitor } = await import('@tauri-apps/api/window');
     const monitores = await availableMonitors();
     const actual = await currentMonitor();
@@ -256,7 +267,7 @@ async function abrirPizarra() {
       nueva.once('tauri://error', (e) => falla(new Error(String(e.payload))));
     });
     await nueva.setFocus();
-    avisar.exito('Pizarra reabierta', propio ? 'En la segunda pantalla' : 'Como ventana');
+    avisar.exito('Pizarra abierta', propio ? 'En la segunda pantalla' : 'Como ventana');
   } catch (e) {
     // Fuera de Tauri (navegador, durante el desarrollo de UI) no hay
     // ventanas y esto falla siempre: ahí no molesta con un aviso.

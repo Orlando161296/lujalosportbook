@@ -22,17 +22,6 @@
         "visible": false,
         "resizable": true,
         "maximized": true
-      },
-      {
-        "label": "pizarra",
-        "title": "Lujalo — Pizarra Pública",
-        "url": "index.html",
-        "width": 1920,
-        "height": 1080,
-        "visible": false,
-        "decorations": false,
-        "resizable": false,
-        "skipTaskbar": true
       }
     ],
     "security": {
@@ -41,6 +30,9 @@
   },
   "bundle": {
     "active": true,
+    "resources": [
+      "recursos/backend"
+    ],
     "targets": [
       "msi",
       "nsis"
