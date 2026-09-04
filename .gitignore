@@ -12,3 +12,9 @@ apps/desktop/src-tauri/target/
 # —avisos de patrocinantes— cargado desde Configuración, no código: viven
 # con la base, se respaldan con ella y no tienen por qué viajar en el repo.
 apps/backend/datos/
+
+# El backend ya empaquetado para el instalador. Lo arma
+# apps/backend/scripts/empaquetar.js y NO se versiona: lleva el runtime de
+# Node y el motor de Prisma, que son binarios propios de cada sistema
+# operativo — el de Linux no arranca en Windows.
+apps/desktop/src-tauri/recursos/

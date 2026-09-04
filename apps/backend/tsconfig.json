@@ -9,6 +9,12 @@
     "target": "ES2021",
     "sourceMap": false,
     "outDir": "./dist",
+    // Sin esto, `prisma/seed.ts` —que vive fuera de src— hace que TypeScript
+    // tome la raíz del proyecto como base común y el build salga en
+    // `dist/src/main.js`. El sidecar del instalador arranca `dist/main.js`:
+    // la ruta tiene que ser una sola y no depender de qué archivos sueltos
+    // haya fuera de src.
+    "rootDir": "./src",
     "baseUrl": "./",
     "incremental": false,
     "skipLibCheck": true,
@@ -17,5 +23,9 @@
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true
-  }
+  },
+  // El seeder se ejecuta con ts-node (ver package.json > prisma.seed), no se
+  // compila con el backend.
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

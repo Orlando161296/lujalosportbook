@@ -1,14 +1,150 @@
-// Punto de entrada de la app de escritorio. Implementa la pieza central
-// que discutimos: dos ventanas (Main = taquilla, Public = pizarra) cada
-// una fijada a un monitor físico distinto, según la configuración que
-// guarda el administrador la primera vez (pantalla 5 del wireframe:
-// "Configuración de pantallas").
+// Punto de entrada de la app de escritorio.
+//
+// Al arrancar se abre UNA sola ventana, la taquilla. La pizarra ya no está
+// declarada en tauri.conf.json y no nace con la app: la crea el botón
+// «Pizarra ↗» del remate cuando el operador la pide (ver abrirPizarra en
+// TaquillaApp.tsx). Tenerla prendida toda la jornada era un webview entero
+// con su propio React y su propia conexión de socket ocupando la PC del
+// local para mostrar un tablero que muchas veces nadie estaba mirando.
 //
 // Compila y corre contra tauri 2.11.5 (la versión fijada en Cargo.lock).
 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Sin esto Windows abre una consola negra detrás de la app: es un binario de
+// consola salvo que se diga lo contrario. En debug se deja, que es donde los
+// println del arranque sirven para algo.
+
 use serde::{Deserialize, Serialize};
 use std::fs;
-use tauri::Manager;
+use std::net::{SocketAddr, TcpStream};
+use std::path::PathBuf;
+use std::process::{Child, Command};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use tauri::path::BaseDirectory;
+use tauri::{Manager, RunEvent};
+
+/// El puerto del backend. Igual que en apps/backend/src/main.ts.
+const PUERTO: u16 = 3210;
+
+/// El backend vivo, para poder matarlo al cerrar.
+///
+/// Sin esto el proceso de Node queda huérfano: la ventana se cierra, el
+/// usuario cree que salió, y al volver a abrir la app el puerto está tomado
+/// por el backend anterior —con la base todavía abierta— y no arranca nada.
+struct Backend(Mutex<Option<Child>>);
+
+fn backend_responde() -> bool {
+    let dir: SocketAddr = ([127, 0, 0, 1], PUERTO).into();
+    TcpStream::connect_timeout(&dir, Duration::from_millis(300)).is_ok()
+}
+
+/// Arranca el backend empaquetado y espera a que atienda.
+///
+/// Si el puerto ya está ocupado no lanza nada: es el caso de `tauri dev`, con
+/// el backend corriendo aparte en otra terminal, y también el de una segunda
+/// instancia de la app. Lanzar otro daría un EADDRINUSE y dos procesos
+/// peleando por el mismo archivo de base.
+fn arrancar_backend(app: &tauri::AppHandle) -> Option<Child> {
+    if backend_responde() {
+        println!("El backend ya está escuchando en {PUERTO}; no se lanza otro.");
+        return None;
+    }
+
+    let recursos = match app.path().resolve("recursos/backend", BaseDirectory::Resource) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("No se encontró el backend empaquetado: {e}");
+            return None;
+        }
+    };
+
+    let node = recursos.join(if cfg!(windows) { "node.exe" } else { "node" });
+    let entrada = recursos.join("dist").join("main.js");
+    if !node.exists() || !entrada.exists() {
+        eprintln!("Falta el backend en {}: corré scripts/empaquetar.js", recursos.display());
+        return None;
+    }
+
+    let datos = match preparar_datos(app, &recursos) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("No se pudo preparar la carpeta de datos: {e}");
+            return None;
+        }
+    };
+
+    let mut cmd = Command::new(&node);
+    cmd.arg(&entrada)
+        .current_dir(&recursos)
+        .env("PUERTO", PUERTO.to_string())
+        // Rutas absolutas y explícitas: instalada, la app no corre desde
+        // ninguna carpeta del repo y todo lo relativo al directorio de
+        // trabajo apuntaría a Archivos de Programa, que es de sólo lectura.
+        .env("DATABASE_URL", format!("file:{}", datos.join("lujalo.db").display()))
+        .env("LUJALO_DATOS_DIR", &datos);
+
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW: sin esto cada arranque abre una consola de Node
+        // encima de la taquilla.
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+
+    let hijo = match cmd.spawn() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("No se pudo arrancar el backend: {e}");
+            return None;
+        }
+    };
+
+    // Esperarlo antes de mostrar la taquilla: si la ventana aparece primero,
+    // la pantalla arranca con todas sus consultas en error y el operador ve
+    // un tablero roto que se arregla solo unos segundos después.
+    let limite = Instant::now() + Duration::from_secs(40);
+    while Instant::now() < limite {
+        if backend_responde() {
+            println!("Backend listo.");
+            return Some(hijo);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    eprintln!("El backend no respondió a tiempo; la app abre igual y reintenta sola.");
+    Some(hijo)
+}
+
+/// Deja lista la carpeta de datos del usuario y devuelve su ruta.
+///
+/// Es AppData y no la carpeta de instalación porque en Windows Archivos de
+/// Programa es de sólo lectura para un usuario común: la base, los avisos de
+/// la pizarra y la configuración de la impresora tienen que poder escribirse
+/// sin ejecutar la app como administrador.
+///
+/// La base sale de la plantilla que arma `empaquetar.js`, ya migrada y con el
+/// admin sembrado. Copiarla es todo lo que hace falta la primera vez: el
+/// instalador no lleva el CLI de Prisma ni corre migraciones en el local.
+fn preparar_datos(app: &tauri::AppHandle, recursos: &PathBuf) -> std::io::Result<PathBuf> {
+    let datos = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string()))?;
+    fs::create_dir_all(&datos)?;
+
+    let base = datos.join("lujalo.db");
+    if !base.exists() {
+        let plantilla = recursos.join("plantilla.db");
+        if plantilla.exists() {
+            fs::copy(&plantilla, &base)?;
+            println!("Base creada en {}", base.display());
+        } else {
+            eprintln!("No hay plantilla.db en los recursos: la base va a arrancar vacía.");
+        }
+    }
+    Ok(datos)
+}
 
 #[derive(Serialize, Deserialize, Default)]
 struct ConfiguracionPantallas {
@@ -100,6 +236,11 @@ fn posicionar_ventanas(app: &tauri::AppHandle, config: &ConfiguracionPantallas) 
         let _ = ventana.set_focus();
     }
 
+    // Al arrancar no hay pizarra que reubicar —la crea el botón del remate, ya
+    // colocada— así que `get_webview_window` devuelve None y esto no corre.
+    // Queda para `guardar_configuracion_pantallas`: si el administrador cambia
+    // a qué monitor va cada ventana con la pizarra abierta, se mueve sola en
+    // vez de obligar a cerrarla y volver a abrirla.
     if let Some(ventana) = app.get_webview_window("pizarra") {
         // La pizarra está pensada para el TV: sin bordes, fuera de la barra
         // de tareas y a pantalla completa en su propio monitor. Eso vale
@@ -141,8 +282,8 @@ fn posicionar_ventanas(app: &tauri::AppHandle, config: &ConfiguracionPantallas) 
             }
         }
 
-        // La pizarra nunca debe mostrar el escritorio de Windows detrás —
-        // se muestra recién acá, ya reposicionada, no antes.
+        // Ya estaba visible —si llegó hasta acá es porque el operador la
+        // abrió—, pero reposicionarla puede dejarla detrás de la taquilla.
         let _ = ventana.show();
 
         // Con un solo monitor el foco tiene que quedar en la taquilla, que
@@ -156,14 +297,34 @@ fn posicionar_ventanas(app: &tauri::AppHandle, config: &ConfiguracionPantallas) 
 }
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .manage(Backend(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![guardar_configuracion_pantallas])
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // Primero el backend, después la ventana: la taquilla no sirve de
+            // nada sin él y verla vacía es peor que esperar un segundo.
+            let hijo = arrancar_backend(&handle);
+            *handle.state::<Backend>().0.lock().unwrap() = hijo;
+
             let config = leer_configuracion(&handle);
             posicionar_ventanas(&handle, &config);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error corriendo la app Lujalo Sportsbook");
+        .build(tauri::generate_context!())
+        .expect("error armando la app Lujalo Sportsbook");
+
+    app.run(|handle, evento| {
+        // Cerrar la app tiene que cerrar el backend. `kill` y no una señal
+        // amable: es un proceso propio, sin nada que guardar —SQLite ya
+        // escribió cada transacción— y si quedara vivo, el arranque siguiente
+        // se encuentra el puerto tomado.
+        if let RunEvent::Exit = evento {
+            if let Some(mut hijo) = handle.state::<Backend>().0.lock().unwrap().take() {
+                let _ = hijo.kill();
+                let _ = hijo.wait();
+            }
+        }
+    });
 }

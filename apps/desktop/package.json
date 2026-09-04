@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "instalador": "npm --prefix ../backend run empaquetar && npm run tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

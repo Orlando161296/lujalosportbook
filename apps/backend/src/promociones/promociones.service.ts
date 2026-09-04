@@ -3,6 +3,7 @@ import { mkdir, writeFile, unlink, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { carpetaDeDatos } from '../impresion/impresora.config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
 
@@ -53,8 +54,11 @@ const MAXIMO_BYTES = 8 * 1024 * 1024;
 @Injectable()
 export class PromocionesService {
   private readonly log = new Logger('Promociones');
+  // Cuelga de la carpeta de datos común —la misma de la base y la config de
+  // la impresora— para que instalada quede en el AppData del usuario y no en
+  // Archivos de Programa, que es de sólo lectura.
   private readonly carpeta = resolve(
-    process.env.PROMOCIONES_DIR?.trim() || join(process.cwd(), 'datos', 'promociones'),
+    process.env.PROMOCIONES_DIR?.trim() || join(carpetaDeDatos(), 'promociones'),
   );
 
   constructor(

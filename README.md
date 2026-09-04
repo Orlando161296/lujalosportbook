@@ -20,60 +20,47 @@ apps/
 ## La impresora
 
 El local imprime en una térmica de **58 mm** (32 columnas) y puede pasarse a
-una de 80 mm (48 columnas) sin tocar código: es el `.env`, y el ticket se
-remaqueta solo. Ver `.env.example` para las opciones completas.
+una de **80 mm** (48 columnas) sin tocar nada: se elige en **Configuración ›
+Impresora** y el ticket se remaqueta solo. No hay ancho escrito en el código.
 
-```bash
-IMPRESORA_DESTINO=usb          # log | usb | red
-IMPRESORA_ANCHO_MM=58          # 58 u 80
-IMPRESORA_RUTA=/dev/usb/lp0    # Windows: \\localhost\TICKETERA
-```
-
-Sin configurar nada el ticket sale por el log del backend y el remate igual
-puede cobrar: una impresora sin papel **nunca** tumba la emisión, porque para
-cuando falla la plata ya se recibió y el correlativo ya se gastó. Queda el
-botón «Imprimir» del ticket para volver a sacarlo.
+Esa pantalla lista las impresoras que la máquina ya tiene —en Windows se las
+pide al spooler con `Get-Printer`—, así que no hay que escribir rutas a mano.
+Se guarda en la carpeta de datos de la PC y no en la base: dos máquinas del
+local pueden tener térmicas distintas. Surte efecto en el ticket siguiente,
+sin reiniciar nada.
 
 Ante la duda el ancho es 58: un ticket angosto entra en papel de 80 mm, al
 revés se cortan los montos.
 
-**Conectarla en Linux.** El kernel numera las térmicas USB por orden de
-conexión (`/dev/usb/lp0`, `lp1`, …), así que la ruta cambia sola si alguien
-desenchufa y vuelve a enchufar. La regla de udev del repo le fija un nombre
-propio y la deja escribible sin más trámite:
+Sin impresora configurada el ticket sale por el log del backend y el remate
+igual puede cobrar: una impresora sin papel **nunca** tumba la emisión, porque
+para cuando falla la plata ya se recibió y el correlativo ya se gastó. Queda
+el botón «Imprimir» del ticket para volver a sacarlo.
+
+**En Windows.** La térmica tiene que estar compartida desde «Impresoras y
+dispositivos» con un nombre sin espacios; recién ahí se le pueden mandar bytes
+crudos. La pantalla marca cuáles están compartidas y cuáles no. El backend
+intenta escribir directo al recurso compartido y, si la cola no lo acepta, cae
+a volcar el trabajo a un temporal y copiarlo con `copy /b`, que es la vía que
+siempre funciona.
+
+**En Linux** (sólo desarrollo) el kernel numera las térmicas USB por orden de
+conexión, así que la ruta cambia sola si alguien la desenchufa. La regla de
+udev del repo le fija un nombre propio:
 
 ```bash
 sudo cp apps/backend/scripts/99-ticketera.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-```bash
-IMPRESORA_DESTINO=usb
-IMPRESORA_ANCHO_MM=58
-IMPRESORA_RUTA=/dev/ticketera
-```
+Viene con el vendor/producto de la TECH CLA58; otra térmica es otro `lsusb` y
+otra línea, explicado adentro del archivo.
 
-La regla viene con el vendor/producto de la TECH CLA58 que hay hoy. Otra
-térmica es otro `lsusb` y otra línea; está explicado adentro del archivo.
-
-**Conectarla en Windows.** La térmica se comparte desde «Impresoras y
-dispositivos» con un nombre sin espacios, y esa es la ruta:
-
-```bash
-IMPRESORA_DESTINO=usb
-IMPRESORA_ANCHO_MM=58
-IMPRESORA_RUTA=\\localhost\TICKETERA
-```
-
-El backend intenta primero escribir directo al recurso compartido y, si la
-cola no lo acepta —depende de cómo esté publicada—, cae a volcar el trabajo a
-un temporal y copiarlo con `copy /b`, que es la vía que siempre funciona.
-
-Hay que **reiniciar el backend** después de tocar el `.env`. Configuración ›
-Impresora muestra qué quedó configurado e imprime una página de prueba: trae
-una regla de ancho —si el último número no entra, el papel no es el que dice
+La página de prueba de esa pantalla verifica el ancho sin emitir un ticket
+real: trae una regla —si el último número no entra, el papel no es el que dice
 la configuración— y una línea de acentos, que salen mal si la impresora no
-tomó la tabla PC850.
+tomó la tabla PC850. Probar cobrando gastaría correlativos, que no se
+reinician nunca.
 
 ## Cómo arrancar
 
@@ -94,6 +81,46 @@ npm run tauri dev
 `.db` —el primero lleva la ruta de la impresora de cada PC, el segundo es la
 plata del local—, así que un clon recién bajado no arranca solo. Es
 idempotente: si ya hay `.env` lo respeta.
+
+### El instalador
+
+El `.msi` lleva todo adentro: la interfaz, el backend compilado, su
+`node_modules` de producción, el runtime de Node y una base ya migrada y
+sembrada. En la PC donde se instala no hace falta Node, ni el repo, ni
+levantar nada a mano — se abre la app y el backend arranca con ella.
+
+```bash
+cd apps/desktop
+npm run instalador     # empaqueta el backend y arma el .msi
+```
+
+Queda en `src-tauri/target/release/bundle/`.
+
+**Hay que compilarlo en la máquina destino.** El motor de consultas de Prisma
+es un binario por sistema operativo (`query_engine-windows.dll.node` en
+Windows, un `.so` en Linux): un `node_modules` copiado de otro sistema no
+arranca. Por eso `recursos/` no se versiona.
+
+Qué hace cada parte:
+
+- `apps/backend/scripts/empaquetar.js` deja el backend listo en
+  `apps/desktop/src-tauri/recursos/backend/`. De `prisma/` copia sólo el
+  schema y las migraciones —la carpeta tiene también el `dev.db` de la
+  máquina que compila, que no puede viajar en un instalador.
+- La base sale de `plantilla.db`, migrada y sembrada al empaquetar. El Rust la
+  copia al `AppData` del usuario la primera vez que se abre la app, así el
+  instalador no necesita el CLI de Prisma ni correr migraciones en el local.
+- Todo lo que se escribe —base, avisos de la pizarra, configuración de la
+  impresora— vive en `AppData` y no en Archivos de Programa, que es de sólo
+  lectura para un usuario común.
+- El Rust arranca el backend al abrir y lo mata al cerrar. Si el puerto 3210
+  ya está ocupado no lanza otro: es el caso de `tauri dev`, con el backend
+  corriendo aparte.
+- En `tauri.conf.json` el backend se declara como **carpeta** y no con un glob
+  `**/*`. Tauri recorre los directorios con `WalkDir`, que incluye los
+  ocultos; el cliente generado de Prisma vive en `node_modules/.prisma`, así
+  que un glob lo dejaría afuera y el backend no arrancaría en la máquina
+  instalada.
 
 ### Compilar la app de escritorio en Windows
 
