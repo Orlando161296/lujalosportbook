@@ -88,6 +88,37 @@
   }
 }
 
+/*
+ * El ganador late en la pizarra.
+ *
+ * En una pantalla que se mira de reojo desde el fondo del salón, un color fijo
+ * no gana la atención: el ojo lo toma como un elemento más del tablero. El
+ * latido es lo único que distingue «este ganó» sin agrandar tipografías ni
+ * robarle espacio a nada.
+ *
+ * Va lento (1,4 s) y entre dos verdes cercanos, no prendido/apagado: un
+ * parpadeo duro en una pantalla que está horas encendida cansa la vista y se
+ * lee como una falla del televisor.
+ */
+@keyframes late-ganador {
+  0%, 100% { background-color: #8fe89b; }
+  50%      { background-color: #d7fbdc; }
+}
+
+.late-ganador {
+  animation: late-ganador 1.4s ease-in-out infinite;
+}
+
+/* El cartel «¡GANADOR!» del pie, que no tiene fondo propio que latir. */
+@keyframes late-cartel {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+.late-cartel {
+  animation: late-cartel 1.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -95,4 +126,10 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+
+  /* Excepción: en la pizarra el latido no es decoración, es lo que señala al
+     ganador en una pantalla de público. La preferencia de la PC del local no
+     debería apagar un indicador del que depende la lectura del tablero. */
+  .late-ganador { animation-duration: 1.4s !important; }
+  .late-cartel  { animation-duration: 1.4s !important; }
 }

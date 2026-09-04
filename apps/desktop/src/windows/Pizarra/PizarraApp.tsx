@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import { socket, EVENTOS } from '../../lib/socket';
 import { bs, fechaLarga } from '../../lib/formato';
 import { totalesDeTabla, useCarrera } from '../../hooks/useCarrera';
+import { usePromociones } from '../../hooks/usePromociones';
 import type { ColorNumero, Jugada } from '../../lib/tipos';
 import logo from '../../assets/logo-lujalo.png';
 
@@ -112,7 +113,7 @@ export function PizarraApp() {
     <Escalada>
     <div className="flex h-full w-full flex-col gap-3.5 bg-pizarra-campo p-4 font-ui">
       {/* ── Cabecera ── */}
-      <header className="grid h-[118px] flex-none grid-cols-[auto_1fr_auto] items-stretch gap-4">
+      <header className="grid h-[118px] flex-none grid-cols-[auto_1fr_auto_auto] items-stretch gap-4">
         <div className={`flex items-center justify-center bg-carbon px-5 ${marco}`}>
           <img src={logo} alt="Centro Hípico Sportsbook Lujalo" className="h-24 w-auto" />
         </div>
@@ -140,6 +141,33 @@ export function PizarraApp() {
                 />
               );
             })}
+          </div>
+        </div>
+
+        {/* El total a cobrar vive arriba: es la cifra que engancha al público
+            y en el pie competía con el ganador por la mirada. Acá queda en la
+            franja que se lee primero, al lado del estado de la carrera. */}
+        <div className={`flex w-[430px] flex-col bg-pizarra-amarillo ${marco}`}>
+          <div className="flex min-h-0 flex-1 items-center justify-between border-b-2
+            border-pizarra-marco px-4">
+            <span className="font-cond text-xl leading-tight tracking-[0.1em] text-[#2a2a2a]">
+              TOTAL<br />A COBRAR
+            </span>
+            {/* Lo que cobra el «pizarreado»: el que lleva el mismo caballo en
+                las tres tablas y gana se lleva las tres, ya descontado el 30%.
+                Antes acá se sumaba `totalJugado`, que es lo rematado y no lo
+                que cobra nadie: en la carrera 8 decía 340.000 cuando el que
+                ganaba se llevaba 252.000. */}
+            <span className="plata text-[42px] font-bold text-[#2a2a2a]">
+              {bs(totales.reduce((s, t) => s + t.alGanador, 0))}
+            </span>
+          </div>
+          <div className="flex flex-none items-baseline justify-between bg-carbon px-4 py-1
+            text-pizarra-amarillo">
+            <span className="font-cond text-[15px] tracking-[0.1em]">POTE DE LA CASA</span>
+            <span className="plata text-[21px] font-bold">
+              {bs(totales.reduce((s, t) => s + t.pote, 0))}
+            </span>
           </div>
         </div>
 
@@ -186,10 +214,13 @@ export function PizarraApp() {
             return (
               <div
                 key={e.id}
-                className="grid min-h-0 items-stretch border-b border-[#9a9a9a]"
+                className={`grid min-h-0 items-stretch border-b border-[#9a9a9a]
+                  ${gana ? 'late-ganador' : ''}`}
                 style={{
                   gridTemplateColumns: '56px 1fr',
-                  background: retirado ? '#f2e2ee' : gana ? '#fff6c9' : '#fff',
+                  // Sin fondo propio cuando gana: lo pinta el latido de la
+                  // clase, y un `background` acá lo taparía.
+                  background: retirado ? '#f2e2ee' : gana ? undefined : '#fff',
                 }}
               >
                 <div
@@ -253,12 +284,17 @@ export function PizarraApp() {
                   const retirado = e.estado === 'retirado';
                   const gana = ganadores.has(e.id);
                   const casa = j?.esCasa;
+                  // El verde y no otro amarillo: el resaltado del ganador
+                  // competía con la cabecera de la tabla, los recuadros y el
+                  // total, que ya son todos amarillos, y terminaba siendo un
+                  // tono más del montón. El latido lo pone la clase; el color
+                  // de arranque vive en el keyframe.
                   return (
                     <div
                       key={e.id}
-                      className="grid min-h-0 grid-cols-[1fr_1.15fr] items-center border-b
-                        border-[#cfc9b4] text-center"
-                      style={{ background: retirado ? '#f2e2ee' : gana ? '#fff6c9' : undefined }}
+                      className={`grid min-h-0 grid-cols-[1fr_1.15fr] items-center border-b
+                        border-[#cfc9b4] text-center ${gana ? 'late-ganador' : ''}`}
+                      style={{ background: retirado ? '#f2e2ee' : undefined }}
                     >
                       <div
                         className="plata border-r border-[#cfc9b4] text-[25px]"
@@ -285,21 +321,25 @@ export function PizarraApp() {
                   );
                 })}
               </div>
+              {/* Dos recuadros y no tres: el total jugado de la tabla —la
+                  bolsa bruta— salió del TV. Se leía como si fuera plata a
+                  cobrar y no lo es: ya tiene adentro el pote y todavía le
+                  falta descontar el 30%, así que invitaba a sumarlo con el
+                  recuadro de al lado y daba una cifra que no existe. Queda lo
+                  que se paga y el pote, que es de dónde sale. */}
               <div
-                className="row-start-4 grid grid-cols-[1fr_1fr_1.15fr] gap-1.5 pt-2"
+                className="row-start-4 grid grid-cols-[1fr_1.15fr] gap-1.5 pt-2"
                 style={{ gridColumnStart: col }}
               >
-                <Caja fondo="#fbe96b" titulo="TABLA" chico>
-                  <span className="plata text-[22px] font-bold text-[#2a2a2a]">{bs(tot?.totalJugado ?? 0)}</span>
-                </Caja>
                 <Caja fondo="#fff" titulo="POTE CASA" chico>
                   <span className="plata text-[22px] font-bold text-[#2a2a2a]">{bs(tot?.pote ?? 0)}</span>
                 </Caja>
-                {/* A REPARTIR = tabla + pote. Lo que finalmente cobra el
-                    ganador tras el 30% NO se muestra en el TV. */}
+                {/* A REPARTIR es lo que el ganador de esta tabla cobra de una
+                    vez: bolsa menos el 30% de la casa. Los tres recuadros de
+                    las tablas suman el total del pie. */}
                 <Caja fondo="#1C1C22" titulo="A REPARTIR" chico>
                   <span className="plata text-2xl font-bold text-pizarra-amarillo">
-                    {bs(tot?.bolsillo ?? 0)}
+                    {bs(tot?.alGanador ?? 0)}
                   </span>
                 </Caja>
               </div>
@@ -309,35 +349,12 @@ export function PizarraApp() {
       </div>
 
       {/* ── Pie ── */}
-      <footer className="grid h-28 flex-none grid-cols-[1fr_430px_540px] gap-3">
-        <div
-          className={`flex items-center justify-center font-cond text-lg tracking-[0.1em]
-            text-pizarra-marco ${marco}`}
-          style={{
-            background: 'repeating-linear-gradient(45deg,#1c1c22,#1c1c22 10px,#16161b 10px,#16161b 20px)',
-          }}
-        >
-          [ ESPACIO PATROCINANTE ]
-        </div>
-
-        <div className={`flex flex-col bg-pizarra-amarillo ${marco}`}>
-          <div className="flex min-h-0 flex-1 items-center justify-between border-b-2
-            border-pizarra-marco px-4">
-            <span className="font-cond text-xl leading-tight tracking-[0.1em] text-[#2a2a2a]">
-              TOTAL<br />A COBRAR
-            </span>
-            <span className="plata text-[42px] font-bold text-[#2a2a2a]">
-              {bs(totales.reduce((s, t) => s + t.totalJugado, 0))}
-            </span>
-          </div>
-          <div className="flex flex-none items-baseline justify-between bg-carbon px-4 py-1
-            text-pizarra-amarillo">
-            <span className="font-cond text-[15px] tracking-[0.1em]">POTE DE LA CASA</span>
-            <span className="plata text-[21px] font-bold">
-              {bs(totales.reduce((s, t) => s + t.pote, 0))}
-            </span>
-          </div>
-        </div>
+      {/* Dos columnas: el total a cobrar se mudó a la cabecera y acá quedan el
+          espacio del patrocinante y el ganador, que es lo que se mira cuando
+          la carrera ya corrió. El ganador se lleva el ancho que dejó libre el
+          total, así entran los nombres largos sin recortarse. */}
+      <footer className="grid h-28 flex-none grid-cols-[1fr_760px] gap-3">
+        <Patrocinantes />
 
         <div className={`flex items-center gap-4 bg-white px-5 ${marco}`}>
           {ganadores.size === 0 ? (
@@ -346,7 +363,7 @@ export function PizarraApp() {
             </span>
           ) : (
             <>
-              <span className="font-cond text-[22px] tracking-[0.14em] text-pizarra-marco">
+              <span className="late-cartel font-cond text-[22px] tracking-[0.14em] text-pizarra-marco">
                 ¡GANADOR!
               </span>
               {[...ganadores].map((id) => {
@@ -404,6 +421,25 @@ const ANCHO_DISENO = 1920;
 const ALTO_DISENO = 1080;
 
 /**
+ * Margen contra el overscan del televisor.
+ *
+ * Casi todos los TV descartan un 3-5% del borde de la señal HDMI —herencia
+ * de la televisión analógica— y lo hacen de fábrica. En el salón el TV corre
+ * a 1920×1080, que es la resolución de diseño: la escala da 1.0 y la pizarra
+ * se dibuja hasta el borde exacto del cuadro, así que ese recorte se come la
+ * cabecera y el pie. No es que el diseño se desborde; es que el televisor no
+ * muestra todo lo que recibe.
+ *
+ * Lo correcto es apagar el overscan en el TV («Just Scan», «Screen Fit» o
+ * «1:1» según la marca) y dejar esto en 1. Pero no todos los televisores lo
+ * permiten, y el local no siempre va a tener el control remoto a mano, así
+ * que la pizarra se encoge un poco y entra igual. 0,96 deja ~22 px de aire
+ * por lado en 1080p, que cubre el recorte típico sin achicar la letra de
+ * forma perceptible a la distancia del salón.
+ */
+const MARGEN_SEGURO = 0.96;
+
+/**
  * Encaja la pizarra en la pantalla que le toque, sin rediseñarla.
  *
  * El tablero está dibujado en píxeles fijos contra 1920×1080 —cabecera de
@@ -433,6 +469,82 @@ const ALTO_DISENO = 1080;
  * y el único momento en que aparece un puntero sobre esta pantalla es cuando
  * el operador vino a hacer algo con ella. Ahí la pista reaparece sola.
  */
+/**
+ * Cuántos segundos queda cada aviso antes de pasar al siguiente.
+ *
+ * Doce es lo que tarda alguien en levantar la vista del mostrador, leer y
+ * volver a lo suyo. Más corto y el aviso se pierde; más largo y con dos
+ * patrocinantes el segundo casi no aparece durante una carrera.
+ */
+const SEGUNDOS_POR_AVISO = 12;
+
+/**
+ * La franja de avisos del pie.
+ *
+ * Las imágenes se apilan todas en el DOM y sólo se cambia la opacidad, en
+ * vez de montar y desmontar la que toca. Así el navegador no vuelve a pedir
+ * ni a decodificar nada en cada vuelta: la primera pasada las deja en
+ * memoria y el resto del día la rotación no cuesta. En una pantalla que está
+ * encendida ocho horas, esa diferencia es la que evita el parpadeo blanco
+ * entre aviso y aviso.
+ */
+function Patrocinantes() {
+  const promociones = usePromociones();
+  const [indice, setIndice] = useState(0);
+  const marco = 'border-2 border-pizarra-marco';
+
+  useEffect(() => {
+    // Con uno solo no hay nada que rotar, y el intervalo sería un timer
+    // corriendo todo el día para no hacer nada.
+    if (promociones.length <= 1) {
+      setIndice(0);
+      return;
+    }
+    const t = setInterval(
+      () => setIndice((n) => (n + 1) % promociones.length),
+      SEGUNDOS_POR_AVISO * 1000,
+    );
+    return () => clearInterval(t);
+  }, [promociones.length]);
+
+  if (promociones.length === 0) {
+    return (
+      <div
+        className={`flex items-center justify-center font-cond text-lg tracking-[0.1em]
+          text-pizarra-marco ${marco}`}
+        style={{
+          background: 'repeating-linear-gradient(45deg,#1c1c22,#1c1c22 10px,#16161b 10px,#16161b 20px)',
+        }}
+      >
+        [ ESPACIO PATROCINANTE ]
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative overflow-hidden bg-carbon ${marco}`}>
+      {promociones.map((p, n) => (
+        <img
+          key={p.id}
+          src={api.promociones.imagen(p.id)}
+          alt=""
+          // `cover` y no `contain`: el listón es de 1116 × 112, casi 10:1, y
+          // con `contain` una imagen de proporción normal entraba ajustada por
+          // el alto y quedaba diminuta —un logo cuadrado ocupaba el 10% del
+          // ancho—. Cubrir llena la franja siempre; el precio es que lo que
+          // sobra por arriba y por abajo se recorta, así que el aviso hay que
+          // armarlo con esa proporción (lo dice la pantalla de carga).
+          className="absolute inset-0 h-full w-full object-cover transition-opacity duration-700"
+          // El índice puede quedar fuera de rango un instante si alguien
+          // borra un aviso justo en la vuelta: el módulo lo devuelve adentro
+          // sin dejar la franja en negro.
+          style={{ opacity: n === indice % promociones.length ? 1 : 0 }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function PistaCerrar() {
   const [visible, setVisible] = useState(true);
 
@@ -463,12 +575,51 @@ function PistaCerrar() {
   );
 }
 
+/**
+ * Calibración de la pantalla, guardada en ESTA PC.
+ *
+ * Cada televisor recorta distinto y no todos dejan apagarlo, así que el
+ * ajuste fino no puede vivir en el código: quien lo hace es el que está
+ * parado frente al TV viendo qué se sale. Se guarda en localStorage porque es
+ * una propiedad del televisor, no del negocio — la misma razón por la que la
+ * impresora vive en el .env y no en la base.
+ *
+ * `x` e `y` existen además de la escala porque el recorte no siempre es
+ * parejo: si la ventana no queda centrada en el TV, achicar no alcanza —
+ * el contenido entra pero sigue corrido para un lado.
+ */
+const CLAVE_CALIBRACION = 'pizarra.calibracion';
+
+interface Calibracion { escala: number; x: number; y: number }
+
+const CALIBRACION_INICIAL: Calibracion = { escala: MARGEN_SEGURO, x: 0, y: 0 };
+
+function leerCalibracion(): Calibracion {
+  // En try/catch porque el acceso mismo puede lanzar —modo privado, cookies
+  // bloqueadas—, no sólo devolver null. Una pizarra que no arranca por el
+  // almacenamiento del navegador sería peor que una mal calibrada.
+  try {
+    const crudo = localStorage.getItem(CLAVE_CALIBRACION);
+    if (!crudo) return CALIBRACION_INICIAL;
+    const v = JSON.parse(crudo) as Partial<Calibracion>;
+    return {
+      escala: Number.isFinite(v.escala) ? Math.min(1.2, Math.max(0.5, v.escala!)) : MARGEN_SEGURO,
+      x: Number.isFinite(v.x) ? v.x! : 0,
+      y: Number.isFinite(v.y) ? v.y! : 0,
+    };
+  } catch {
+    return CALIBRACION_INICIAL;
+  }
+}
+
 function Escalada({ children }: { children: ReactNode }) {
-  const [escala, setEscala] = useState(1);
+  const [base, setBase] = useState(1);
+  const [cal, setCal] = useState<Calibracion>(leerCalibracion);
+  const [ajustando, setAjustando] = useState(false);
 
   useEffect(() => {
     const medir = () => {
-      setEscala(Math.min(
+      setBase(Math.min(
         window.innerWidth / ANCHO_DISENO,
         window.innerHeight / ALTO_DISENO,
       ));
@@ -478,13 +629,62 @@ function Escalada({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('resize', medir);
   }, []);
 
+  useEffect(() => {
+    let ocultar: ReturnType<typeof setTimeout>;
+
+    const alTeclear = (e: KeyboardEvent) => {
+      // Shift = paso fino. El grueso mueve rápido para encontrar el borde;
+      // el fino sirve cuando ya falta poco y el grueso se pasa de largo.
+      const paso = e.shiftKey ? 1 : 4;
+      const salto = e.shiftKey ? 0.002 : 0.01;
+      let nueva: Calibracion | null = null;
+
+      switch (e.key) {
+        case '+': case '=': nueva = { ...cal, escala: Math.min(1.2, cal.escala + salto) }; break;
+        case '-': case '_': nueva = { ...cal, escala: Math.max(0.5, cal.escala - salto) }; break;
+        case 'ArrowLeft':  nueva = { ...cal, x: cal.x - paso }; break;
+        case 'ArrowRight': nueva = { ...cal, x: cal.x + paso }; break;
+        case 'ArrowUp':    nueva = { ...cal, y: cal.y - paso }; break;
+        case 'ArrowDown':  nueva = { ...cal, y: cal.y + paso }; break;
+        // El 0 devuelve todo a fábrica: si alguien deja la pizarra impresentable
+        // a las tres de la tarde, se recupera con una tecla y sin buscar a nadie.
+        case '0': nueva = CALIBRACION_INICIAL; break;
+        default: return;
+      }
+
+      e.preventDefault();
+      setCal(nueva);
+      try { localStorage.setItem(CLAVE_CALIBRACION, JSON.stringify(nueva)); } catch { /* sin persistir */ }
+
+      // El cartel sólo aparece mientras se calibra: la pizarra es pantalla de
+      // público y un indicador permanente sería ruido en el salón.
+      setAjustando(true);
+      clearTimeout(ocultar);
+      ocultar = setTimeout(() => setAjustando(false), 2500);
+    };
+
+    window.addEventListener('keydown', alTeclear);
+    return () => {
+      clearTimeout(ocultar);
+      window.removeEventListener('keydown', alTeclear);
+    };
+  }, [cal]);
+
   return (
     <div className="grid h-full w-full place-items-center overflow-hidden bg-pizarra-campo">
+      {ajustando && (
+        <div className="pointer-events-none fixed bottom-4 left-5 z-50 rounded-md border
+          border-humo bg-negro/85 px-4 py-2 font-ui text-[15px] text-gris-claro">
+          <b className="text-amarillo">{(cal.escala * 100).toFixed(1)}%</b>
+          {' · '}x {cal.x} · y {cal.y}
+          <span className="ml-3 text-humo">+ − mueven · flechas centran · 0 restablece</span>
+        </div>
+      )}
       <div
         style={{
           width: ANCHO_DISENO,
           height: ALTO_DISENO,
-          transform: `scale(${escala})`,
+          transform: `translate(${cal.x}px, ${cal.y}px) scale(${base * cal.escala})`,
           // Sin esto el escalado dejaría el diseño anclado por el centro y
           // el contenedor seguiría reservando los 1920×1080 completos.
           transformOrigin: 'center center',

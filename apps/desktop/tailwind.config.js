@@ -24,7 +24,11 @@ export default {
           campo: '#cf4bb8',
           marco: '#8f2f7c',
           marcoOsc: '#6b1f5c',
-          amarillo: '#fbe96b',
+          // Amarillo saturado y no pastel: a la distancia del salón el
+          // #fbe96b original se lavaba contra el magenta del campo y perdía
+          // fuerza en el TV, que además suele subir el brillo. Sigue siendo
+          // claro, así que el texto oscuro (#2a2a2a) mantiene el contraste.
+          amarillo: '#ffe000',
           crema: '#fffdf0',
           durazno: '#f7cba4',
           oliva: '#7a5b0a',
