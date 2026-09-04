@@ -16,15 +16,13 @@ interface JugadaCruda {
 /**
  * El bolsillo de una carrera, resuelto de una sola pasada.
  *
- * Sirve para las dos cifras del ticket que dependen del estado del remate y
- * no del ticket en sí: la PROPORCIÓN (contra el total) y lo que cobra cada
- * jugada (contra su tabla).
+ * Sirve para lo que cobra cada jugada si su ejemplar gana —siempre contra SU
+ * tabla, que es la que reparte— y, de ahí, para la PROPORCIÓN que el render
+ * le imprime al ganador.
  */
 interface BolsilloCarrera {
   /** Por tabla: lo que se lleva el ganador de esa tabla, y si ya cerró. */
   porTabla: Map<number, { aRepartir: number; cerrada: boolean }>;
-  /** Jugado activo + pote de todas las tablas: la base de PROPORCIÓN. */
-  total: number;
   /** Ejemplares ganadores. Vacío mientras la carrera no tenga resultado. */
   ganadores: Set<number>;
 }
@@ -133,8 +131,8 @@ export class TicketsService {
       : null;
 
     // Se calcula DESPUÉS de escribir las jugadas: recién ahí el bolsillo de
-    // la carrera incluye las de este ticket, que es contra lo que se mide
-    // tanto la proporción como lo que cobraría cada una.
+    // la carrera incluye las de este ticket, que es contra lo que se mide lo
+    // que cobraría cada una.
     const bolsillo = await this.bolsillo(cobro.carreraId);
 
     const datos: DatosTicket = {
@@ -148,7 +146,6 @@ export class TicketsService {
       moneda: cobro.moneda,
       tasaAplicada: tasa ? Number(tasa.valorBsPorUsd) : null,
       totalBs: Number(cobro.monto),
-      proporcionPct: this.proporcionPct(bolsillo, Number(cobro.monto)),
       jugadas: this.jugadasDelTicket(
         jugadas.map((j) => ({
           tablaId: j.tablaId,
@@ -178,15 +175,14 @@ export class TicketsService {
   }
 
   /**
-   * El bolsillo de la carrera: lo que hay para repartir en cada tabla y el
-   * total sobre el que se mide la proporción.
+   * El bolsillo de la carrera: lo que hay para repartir en cada tabla.
    *
    * `aRepartir` de una tabla es `(jugado activo + pote) × (1 − comisión)` —
    * la misma fórmula de TablasService.calcularARepartir, resuelta acá para
    * las tres tablas de una sola vez en lugar de una consulta por jugada.
    *
    * Sólo cuentan las jugadas activas: un ejemplar retirado saca las suyas
-   * del reparto, y tanto la proporción como el pago se mueven con él.
+   * del reparto, y el pago —y con él la proporción— se mueve.
    */
   private async bolsillo(carreraId: number): Promise<BolsilloCarrera> {
     const tablas = await this.prisma.tabla.findMany({
@@ -205,28 +201,20 @@ export class TicketsService {
     });
 
     const porTabla = new Map<number, { aRepartir: number; cerrada: boolean }>();
-    let total = 0;
 
     for (const t of tablas) {
       const jugado = t.jugadas.reduce((s, j) => s + Number(j.monto), 0);
       // El pote entra porque forma parte del bolsillo que se reparte: el
       // ganador se lleva `(tabla + pote) × 0,7`, así que dejarlo afuera daría
-      // una proporción sobre una bolsa que no es la que se paga.
+      // de menos en lo que cobra y en la proporción que sale de esa cifra.
       const bolsa = jugado + Number(t.poteCasa);
-      total += bolsa;
       porTabla.set(t.id, {
         aRepartir: bolsa * (1 - Number(t.comisionPct) / 100),
         cerrada: t.estado === 'cerrada',
       });
     }
 
-    return { porTabla, total, ganadores: new Set(ganadores.map((g) => g.ejemplarId)) };
-  }
-
-  /** Qué fracción del bolsillo de la carrera representa este ticket. */
-  private proporcionPct(bolsillo: BolsilloCarrera, monto: number): number | null {
-    if (bolsillo.total <= 0) return null;
-    return (monto / bolsillo.total) * 100;
+    return { porTabla, ganadores: new Set(ganadores.map((g) => g.ejemplarId)) };
   }
 
   /**
@@ -307,7 +295,6 @@ export class TicketsService {
       moneda: t.moneda,
       tasaAplicada: t.tasaAplicada ? Number(t.tasaAplicada) : null,
       totalBs: Number(t.totalBs),
-      proporcionPct: this.proporcionPct(bolsillo, Number(t.totalBs)),
       jugadas: this.jugadasDelTicket(
         t.jugadas.map((j) => ({
           tablaId: j.tablaId,

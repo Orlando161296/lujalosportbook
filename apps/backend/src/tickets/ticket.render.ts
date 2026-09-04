@@ -118,8 +118,6 @@ export interface DatosTicket {
   moneda: string;
   tasaAplicada: number | null;
   totalBs: number;
-  /** Qué fracción del total rematado de la carrera representa este ticket. */
-  proporcionPct: number | null;
   jugadas: JugadaTicket[];
 }
 
@@ -174,10 +172,17 @@ export function renderTicket(d: DatosTicket, ancho: number = ANCHO_58MM): string
   // derecha. Un ticket agrupa TODAS las jugadas que el cliente se llevó en
   // la carrera — por eso el modelo tiene un Ticket con muchas Jugada.
   //
-  // Debajo de cada una va lo que cobra si ese ejemplar gana. Es el dato que
-  // el cliente pregunta apenas recibe el papel, y tenerlo impreso evita que
-  // el operador lo recalcule de memoria en medio del remate.
+  // El desglose de «si gana» debajo de cada jugada existe para el ticket que
+  // reparte caballos DISTINTOS entre las tablas: ahí cada uno paga lo suyo y
+  // son escenarios que compiten, así que hay que verlos separados.
+  //
+  // Con el mismo caballo en T1, T2 y T3 —la forma habitual de jugar acá— ese
+  // desglose es ruido: las tres tablas cobran juntas o no cobra ninguna, y
+  // repetir tres cifras que el cliente igual va a sumar sólo alarga el papel.
+  // En ese caso las jugadas quedan como el detalle de dónde se puso la plata
+  // y la cifra sale una sola vez, abajo, en TOTAL A COBRAR.
   const hayResultado = d.jugadas.some((j) => j.gano != null);
+  const unSoloEjemplar = new Set(d.jugadas.map((j) => j.numero)).size === 1;
   let algunaAbierta = false;
 
   for (const j of d.jugadas) {
@@ -193,6 +198,10 @@ export function renderTicket(d: DatosTicket, ancho: number = ANCHO_58MM): string
 
     if (j.cobraSiGana == null) continue;
     if (!j.tablaCerrada) algunaAbierta = true;
+    // Un solo ejemplar: el renglón por jugada se omite y todo se resuelve
+    // abajo, en el total. El estado —ganó o no cobra— también se dice una
+    // sola vez ahí, que es donde va la plata.
+    if (unSoloEjemplar) continue;
 
     if (j.gano === false) {
       l.push(par('  no cobra', '-'));
@@ -212,18 +221,62 @@ export function renderTicket(d: DatosTicket, ancho: number = ANCHO_58MM): string
     }
   }
 
+  // Los montos, además, en dólares: el local cotiza en bolívares pero la
+  // referencia en divisa es la que la gente pregunta, tanto al pagar como al
+  // cobrar. Sale de la tasa congelada del ticket —no de la del día— para que
+  // el papel valga lo mismo cuando se emite que cuando se paga. La tasa ya no
+  // se imprime en renglón propio, pero sigue guardada en Ticket.tasaAplicada.
+  const enDolares = (bs: number): string | null =>
+    d.tasaAplicada && d.tasaAplicada > 0 ? `${montoBs(bs / d.tasaAplicada)} $` : null;
+
   l.push(linea());
-  l.push(par('MONTO JUGADO', `${montoBs(d.totalBs)} Bs`));
-  if (d.proporcionPct != null) {
-    l.push(par('PROPORCIÓN', `${d.proporcionPct.toFixed(2).replace('.', ',')} %`));
-  }
-  // La tasa queda congelada en el papel: si el cliente pagó en dólares, la
-  // divisa no se recalcula después con otra tasa (Ticket.tasaAplicada).
-  l.push(par(
-    'PAGÓ EN',
-    d.tasaAplicada ? `${d.moneda} · tasa ${montoBs(d.tasaAplicada)}` : d.moneda,
-  ));
+  // Un solo renglón para lo que entregó el cliente: «MONTO JUGADO» y «TOTAL A
+  // PAGAR» eran la misma cifra —el total del ticket— con dos nombres, y en el
+  // papel se leían como si fueran conceptos distintos.
   l.push(par('TOTAL A PAGAR', `${montoBs(d.totalBs)} Bs`));
+  const refPago = enDolares(d.totalBs);
+  if (refPago && d.totalBs > 0) l.push(par('  en dólares', refPago));
+
+  // Sin resultado el ticket todavía es una promesa, pero el jugador se lleva
+  // igual el número que le importa: cuánto cobra si su caballo gana.
+  //
+  // Se suma POR EJEMPLAR y no de corrido: el mismo caballo repartido entre
+  // las tres tablas cobra las tres —es el caso normal del local, y es lo que
+  // hizo ROBERT en la carrera 2—, pero dos caballos distintos son escenarios
+  // que no pueden pasar juntos, porque la carrera la gana uno solo. Con un
+  // solo ejemplar en el ticket eso es un total y se rotula como tal; con
+  // varios van los subtotales, que es lo único que no miente.
+  const porEjemplar = new Map<number, { cobra: number }>();
+  for (const j of d.jugadas) {
+    if (j.cobraSiGana == null) continue;
+    const previo = porEjemplar.get(j.numero);
+    if (previo) previo.cobra += j.cobraSiGana;
+    else porEjemplar.set(j.numero, { cobra: j.cobraSiGana });
+  }
+
+  if (!hayResultado) {
+    if (porEjemplar.size === 1) {
+      const [{ cobra }] = [...porEjemplar.values()];
+      l.push(linea());
+      l.push(par('TOTAL A COBRAR', `${montoBs(cobra)} Bs`));
+      const ref = enDolares(cobra);
+      if (ref) l.push(par('  en dólares', ref));
+      // La misma proporción que lleva el ticket ganador, pero sobre lo que
+      // cobraría: el jugador se va sabiendo cuántas veces multiplica lo que
+      // puso. Si la tabla sigue abierta el bolsillo puede subir y el número
+      // mejora — el aviso del pie ya dice que el total es estimado.
+      if (d.totalBs > 0 && cobra > 0) {
+        l.push(par('PROPORCIÓN', (cobra / d.totalBs).toFixed(2).replace('.', ',')));
+      }
+    } else if (porEjemplar.size > 1) {
+      l.push(linea());
+      for (const [numero, { cobra }] of porEjemplar) {
+        l.push(par(`SI GANA N° ${numero}`, `${montoBs(cobra)} Bs`));
+        const ref = enDolares(cobra);
+        if (ref) l.push(par('  en dólares', ref));
+      }
+    }
+  }
 
   // Con el resultado ya cantado el ticket deja de ser una promesa y pasa a
   // ser el comprobante de cuánto hay que entregarle: ahí sí se suma, porque
@@ -233,24 +286,59 @@ export function renderTicket(d: DatosTicket, ancho: number = ANCHO_58MM): string
       .filter((j) => j.gano)
       .reduce((s, j) => s + (j.cobraSiGana ?? 0), 0);
     l.push(linea());
+    // Con un solo ejemplar las jugadas de arriba salen sin estado, así que el
+    // «ganó» o «no cobra» se canta acá, pegado a la cifra: es lo primero que
+    // busca el operador cuando el cliente le pone el ticket en el mostrador.
+    if (unSoloEjemplar) l.push(centrar(cobra > 0 ? '** GANÓ **' : 'NO COBRA'));
     l.push(par('TOTAL A COBRAR', `${montoBs(cobra)} Bs`));
+    const refCobro = enDolares(cobra);
+    if (refCobro && cobra > 0) l.push(par('  en dólares', refCobro));
+
+    // La proporción del ganador: cuántas veces se lleva lo que puso. Es
+    // global al ticket —todo lo que cobra sobre todo lo que pagó—, no una
+    // cifra por caballo: el cliente que reparte el mismo ejemplar entre las
+    // tres tablas hizo UNA apuesta de tres partes, y lo que quiere saber es
+    // cómo le fue en conjunto.
+    //
+    // Ej.: ticket 9, ROBERT — pagó 30.000 y cobró 65.380 (20.020 + 20.160 +
+    // 25.200 de las tres tablas): 65.380 / 30.000 = 2,18.
+    //
+    // Va acá abajo y sólo con resultado: mientras las tablas sigan abiertas
+    // el bolsillo puede subir, y el número cambiaría entre el ticket que se
+    // llevó el cliente y lo que termina cobrando.
+    if (d.totalBs > 0 && cobra > 0) {
+      const veces = cobra / d.totalBs;
+      l.push(par('PROPORCIÓN', veces.toFixed(2).replace('.', ',')));
+    }
   }
 
   l.push(linea('='));
 
-  // Sin resultado, los «si gana» son escenarios excluyentes entre sí. Un
-  // cliente con dos jugadas los sumaría, y el número que se armaría en la
-  // cabeza no existe: el ganador se lleva el bolsillo de UNA tabla.
-  if (!hayResultado && d.jugadas.some((j) => j.cobraSiGana != null)) {
-    l.push(...parrafo(
-      'Los montos de «si gana» no se suman: se cobra sólo por la jugada que gane.',
-    ));
-    if (algunaAbierta) {
-      l.push(...parrafo(
-        'Los marcados (est.) son estimados al momento de emitir: la tabla sigue abierta y el bolsillo puede subir.',
+  // El aviso vale sólo con varios ejemplares en el ticket: ahí los «si gana»
+  // son escenarios excluyentes —gana un caballo solo— y sumarlos da un número
+  // que no puede pasar. Con un único ejemplar sí se suman, y de hecho el
+  // TOTAL A COBRAR de arriba los sumó: repetir el aviso contradiría al papel.
+  if (!hayResultado && porEjemplar.size > 0) {
+    const avisos: string[] = [];
+    if (porEjemplar.size > 1) {
+      avisos.push(...parrafo(
+        'Los «si gana» de cada caballo no se suman entre sí: la carrera la gana uno solo.',
       ));
     }
-    l.push(linea('='));
+    if (algunaAbierta) {
+      // Con un solo ejemplar no hay marcas «(est.)» que señalar —el desglose
+      // por jugada no se imprime—, así que la advertencia habla del total,
+      // que es la única cifra en el papel que puede moverse.
+      avisos.push(...parrafo(
+        unSoloEjemplar
+          ? 'El total a cobrar es estimado al momento de emitir: la tabla sigue abierta y el bolsillo puede subir.'
+          : 'Los marcados (est.) son estimados al momento de emitir: la tabla sigue abierta y el bolsillo puede subir.',
+      ));
+    }
+    // Un ticket de un solo caballo con la tabla ya cerrada no tiene nada que
+    // advertir: sin esta guarda el bloque cerraba igual y salían dos «===»
+    // pegados, que en el papel se lee como un ticket cortado.
+    if (avisos.length) l.push(...avisos, linea('='));
   }
 
   // El correlativo es lo que se busca en el historial y lo que el cliente
