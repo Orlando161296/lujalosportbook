@@ -1,7 +1,7 @@
 // Cliente REST. Un solo lugar que sabe la URL del backend y cómo se ve un
 // error, para que ninguna pantalla arme fetch a mano.
 import type {
-  Carrera, Cliente, Cobro, ColorNumero, Ejemplar, EstadoImpresora, Hipodromo, Jornada, Jugada, Moneda, Pizarra, Promocion, ResultadoCarrera, Tabla, Taquilla, TasaCambio, Usuario, Ticket,
+  CambiosImpresora, Carrera, Cliente, Cobro, ColorNumero, Ejemplar, EstadoImpresora, Hipodromo, ImpresoraDetectada, Jornada, Jugada, Moneda, Pizarra, Promocion, ResultadoCarrera, Tabla, Taquilla, TasaCambio, Usuario, Ticket,
 } from './tipos';
 
 // Mismo puerto fijo que usa el sidecar (ver apps/backend/src/main.ts): es lo
@@ -140,10 +140,6 @@ export const api = {
     // (32 columnas en 58 mm, 48 en 80 mm), tal cual saldría por el papel.
     previsualizar: (id: number) =>
       get<{ texto: string }>(`/tickets/${id}/previsualizacion`),
-    // Qué impresora hay del otro lado. La pantalla lo necesita para rotular
-    // la vista previa con el ancho real y para no ofrecer un botón de
-    // imprimir que no tiene a dónde mandar el papel.
-    impresora: () => get<EstadoImpresora>('/tickets/impresora'),
     // Reimprime uno ya emitido: no consume numeración ni toca la base.
     imprimir: (id: number) => post<{ impreso: true }>(`/tickets/${id}/imprimir`),
     // Página de prueba: verifica la térmica sin gastar un correlativo.
@@ -228,6 +224,17 @@ export const api = {
         : '';
       return get<T>(`/reportes/resumen-dia${q}`);
     },
+  },
+
+  impresora: {
+    estado: () => get<EstadoImpresora>('/impresora'),
+    /**
+     * Las que la máquina ya tiene instaladas. Nunca falla: si no se pudo
+     * preguntarle al sistema, vuelve vacía y la pantalla ofrece la ruta a mano.
+     */
+    detectadas: () => get<ImpresoraDetectada[]>('/impresora/detectadas'),
+    guardar: (cambios: CambiosImpresora) => put<EstadoImpresora>('/impresora', cambios),
+    prueba: () => post<{ impreso: boolean }>('/tickets/prueba'),
   },
 
   promociones: {

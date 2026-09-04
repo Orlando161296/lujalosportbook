@@ -4,10 +4,12 @@ import { api } from '../../lib/api';
 import { bs, fechaCorta, hora } from '../../lib/formato';
 import { useNavegacion, type PantallaConfig } from '../../lib/estado';
 import {
-  Boton, Campo, Casilla, Cargando, Entrada, Etiqueta, Panel, Pildora, Problema, Selector, Vacio,
+  Boton, Campo, Casilla, Cargando, Entrada, Etiqueta, Panel, Pildora, Problema, Segmentado,
+  Selector, Vacio,
 } from '../../ui';
 import { CampoFecha } from '../../ui/campo-fecha';
 import { avisar } from '../../ui/avisos';
+import type { CambiosImpresora } from '../../lib/tipos';
 
 const SECCIONES: { id: PantallaConfig; nombre: string }[] = [
   { id: 'tasa', nombre: 'Tasa del día' },
@@ -289,79 +291,203 @@ function Hipodromos() {
 /* ───────────────────────────── Impresora ───────────────────────────── */
 
 /**
- * Estado de la térmica y su página de prueba.
+ * La térmica de esta PC: cuál es, de cuántos milímetros, y su prueba.
  *
- * La configuración vive en el `.env` de cada PC y no acá: es una propiedad de
- * la máquina —qué impresora tiene enchufada y de cuántos milímetros— y no del
- * negocio. Lo que sí hace falta en pantalla es poder verla y probarla sin
- * emitir un ticket real, porque el correlativo no se reinicia nunca y ajustar
- * el papel a fuerza de cobros deja números gastados en el historial.
+ * Se configura acá y no en un archivo. Antes vivía en el `.env`, que servía
+ * mientras esto se corría como proyecto de desarrollo; instalado como
+ * programa no hay repo donde editar nada ni terminal donde reiniciar el
+ * servidor. Se guarda junto a la base —es propiedad de LA PC, no del
+ * negocio: dos máquinas del local pueden tener térmicas distintas— y surte
+ * efecto en el ticket siguiente, sin reiniciar.
+ *
+ * La lista de arriba se la pregunta al sistema para que nadie tenga que
+ * escribir una ruta a mano, que es de donde salían los errores difíciles: una
+ * barra invertida de menos y el ticket no sale, sin decir por qué.
  */
 function Impresora() {
-  const estado = useQuery({ queryKey: ['impresora'], queryFn: api.tickets.impresora });
+  const qc = useQueryClient();
+  const estado = useQuery({ queryKey: ['impresora'], queryFn: api.impresora.estado });
+  const detectadas = useQuery({
+    queryKey: ['impresoras-detectadas'],
+    queryFn: api.impresora.detectadas,
+    // Preguntarle al sistema tarda; no se reconsulta sola en cada visita.
+    staleTime: 60_000,
+  });
+
+  const guardar = useMutation({
+    mutationFn: (cambios: CambiosImpresora) => api.impresora.guardar(cambios),
+    onSuccess: (nuevo) => {
+      qc.setQueryData(['impresora'], nuevo);
+      avisar.exito('Impresora guardada', 'El próximo ticket ya sale por acá.');
+    },
+    onError: (e: Error) => avisar.error('No se pudo guardar', e.message),
+  });
 
   const probar = useMutation({
-    mutationFn: () => api.tickets.prueba(),
+    mutationFn: () => api.impresora.prueba(),
     onSuccess: () => avisar.exito('Página de prueba enviada',
       'Si no sale papel, revisá que la impresora esté encendida y con rollo.'),
     onError: (e) => avisar.error('No se pudo imprimir',
       e instanceof Error ? e.message : 'Error inesperado.'),
   });
 
+  // La ruta se teclea sólo cuando la detección no encontró nada. Vive en un
+  // estado aparte para no mandar una petición por cada letra.
+  const [rutaManual, setRutaManual] = useState('');
+  const [host, setHost] = useState('');
+
   if (estado.isPending) return <Cargando que="la impresora" />;
   if (estado.error) return <Problema error={estado.error} reintentar={estado.refetch} />;
   const i = estado.data!;
+  const guardando = guardar.isPending;
 
   return (
     <>
       <Titulo
         texto="Impresora"
-        nota="Se configura en el archivo .env de esta PC, no desde acá: es propiedad de la máquina."
+        nota="La térmica de esta PC. Se guarda en esta máquina y no en la base: dos PC del local pueden tener impresoras distintas."
       />
 
-      <Panel className="max-w-[560px]" cuerpoClassName="p-0">
-        <Dato etiqueta="Destino" valor={
-          i.destino === 'log' ? 'Ninguna — el ticket sale por el registro del servidor'
-          : i.destino === 'usb' ? `USB o compartida · ${i.donde}`
-          : `Red · ${i.donde}`
-        } />
-        <Dato etiqueta="Papel" valor={`${i.anchoMm} mm · ${i.columnas} columnas`} />
-        <Dato etiqueta="Corte" valor={i.corta ? 'Automático' : 'A mano'} />
-      </Panel>
+      <div className="flex max-w-[560px] flex-col gap-4">
+        {/* ── Dónde sale el ticket ── */}
+        <Panel titulo="Dónde sale el ticket" cuerpoClassName="p-3 flex flex-col gap-3">
+          <Segmentado
+            valor={i.destino}
+            onCambio={(destino) => guardar.mutate({ destino })}
+            opciones={[
+              { valor: 'usb' as const, etiqueta: 'USB / compartida' },
+              { valor: 'red' as const, etiqueta: 'Red' },
+              { valor: 'log' as const, etiqueta: 'Ninguna' },
+            ]}
+          />
 
-      <div className="mt-4 flex max-w-[560px] items-center gap-3">
-        <Boton
-          tono="principal"
-          disabled={probar.isPending}
-          onClick={() => probar.mutate()}
-        >
-          {probar.isPending ? 'Enviando…' : 'Imprimir página de prueba'}
-        </Boton>
-        <p className="flex-1 text-[13px] leading-snug text-gris">
-          Saca una hoja con una regla de ancho y los acentos. Si el último
-          número de la regla no entra, el papel configurado no es el real; si
-          los acentos salen raros, la impresora no tomó la tabla de caracteres.
-        </p>
+          {i.destino === 'usb' && (
+            <>
+              <div className="flex items-baseline justify-between">
+                <Etiqueta>Impresoras encontradas</Etiqueta>
+                <button
+                  type="button"
+                  onClick={() => detectadas.refetch()}
+                  className="text-[12px] font-semibold uppercase tracking-wider text-magenta"
+                >
+                  Buscar de nuevo
+                </button>
+              </div>
+
+              {detectadas.isFetching ? <Cargando que="las impresoras" /> : (
+                <div className="flex flex-col gap-1.5">
+                  {(detectadas.data ?? []).map((d) => (
+                    <div key={d.nombre}
+                      className="flex items-center gap-2 rounded border border-borde px-2.5 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-semibold">{d.nombre}</div>
+                        <div className="text-[12.5px] text-gris">{d.detalle}</div>
+                      </div>
+                      {d.ruta === i.donde
+                        ? <Pildora tono="ok">En uso</Pildora>
+                        : d.listaParaUsar
+                          ? (
+                            <Boton disabled={guardando}
+                              onClick={() => guardar.mutate({ destino: 'usb', ruta: d.ruta })}>
+                              Usar esta
+                            </Boton>
+                          )
+                          // En Windows, a una impresora sin compartir no se le
+                          // puede escribir: el nombre es el de la cola, no una
+                          // ruta que se pueda abrir.
+                          : <span className="text-[12px] font-semibold text-naranja">Hay que compartirla</span>}
+                    </div>
+                  ))}
+
+                  {(detectadas.data ?? []).length === 0 && (
+                    <p className="text-[13px] leading-snug text-gris">
+                      No se encontró ninguna. En Windows la térmica tiene que estar
+                      compartida desde «Impresoras y dispositivos», con un nombre sin
+                      espacios. Si ya sabés la ruta, ponela abajo.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <Campo>
+                <Etiqueta>…o escribí la ruta</Etiqueta>
+                <div className="flex gap-2">
+                  <Entrada
+                    className="flex-1"
+                    value={rutaManual}
+                    placeholder={i.donde ?? '\\\\localhost\\TICKETERA'}
+                    onChange={(e) => setRutaManual(e.target.value)}
+                  />
+                  <Boton disabled={guardando || !rutaManual.trim()}
+                    onClick={() => guardar.mutate({ destino: 'usb', ruta: rutaManual.trim() })}>
+                    Usar
+                  </Boton>
+                </div>
+              </Campo>
+            </>
+          )}
+
+          {i.destino === 'red' && (
+            <Campo>
+              <Etiqueta>Dirección de la impresora</Etiqueta>
+              <div className="flex gap-2">
+                <Entrada
+                  className="flex-1"
+                  value={host}
+                  placeholder={i.donde ?? '192.168.1.50'}
+                  onChange={(e) => setHost(e.target.value)}
+                />
+                <Boton disabled={guardando || !host.trim()}
+                  onClick={() => guardar.mutate({ destino: 'red', host: host.trim() })}>
+                  Usar
+                </Boton>
+              </div>
+            </Campo>
+          )}
+
+          {i.destino === 'log' && (
+            <p className="text-[13px] leading-snug text-naranja">
+              Sin impresora: los tickets se emiten igual y quedan en el historial,
+              con su número, pero no sale papel. El remate puede cobrar así.
+            </p>
+          )}
+        </Panel>
+
+        {/* ── Papel ── */}
+        <Panel titulo="Papel" cuerpoClassName="p-3 flex flex-col gap-3">
+          {/* Los dos anchos que el ticket sabe maquetar. Cambiarlo remaqueta
+              todo solo: no hay nada atado a 32 columnas. */}
+          <Segmentado
+            valor={i.anchoMm === 80 ? 80 : 58}
+            onCambio={(anchoMm) => guardar.mutate({ anchoMm })}
+            opciones={[
+              { valor: 58 as const, etiqueta: '58 mm · 32 col.' },
+              { valor: 80 as const, etiqueta: '80 mm · 48 col.' },
+            ]}
+          />
+          <Casilla marcada={i.corta} onCambio={(corta) => guardar.mutate({ corta })}>
+            Tiene guillotina (corta sola)
+          </Casilla>
+          <p className="text-[12.5px] leading-snug text-gris">
+            Ante la duda, 58: un ticket angosto entra en papel de 80 mm, al revés
+            se cortan los montos. Mandarle el corte a una impresora que no lo tiene
+            puede dejarla colgada.
+          </p>
+        </Panel>
+
+        {/* ── Prueba ── */}
+        <div className="flex items-center gap-3">
+          <Boton tono="principal" disabled={probar.isPending} onClick={() => probar.mutate()}>
+            {probar.isPending ? 'Enviando…' : 'Imprimir página de prueba'}
+          </Boton>
+          <p className="flex-1 text-[13px] leading-snug text-gris">
+            Sale con una regla de ancho y los acentos. Si el último número de la
+            regla no entra, el papel elegido no es el real; si los acentos salen
+            raros, la impresora no tomó la tabla de caracteres.
+          </p>
+        </div>
       </div>
-
-      {!i.conectada && (
-        <p className="mt-4 max-w-[560px] text-[13px] font-semibold leading-snug text-naranja">
-          No hay impresora configurada: los tickets se emiten igual y quedan en
-          el historial, pero no sale papel. Para conectarla, poné
-          IMPRESORA_DESTINO e IMPRESORA_RUTA en apps/backend/.env y reiniciá
-          el servidor.
-        </p>
-      )}
     </>
-  );
-}
-
-function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-borde px-4 py-2.5 last:border-0">
-      <span className="etiqueta">{etiqueta}</span>
-      <span className="text-right text-[15px] font-semibold">{valor}</span>
-    </div>
   );
 }
 

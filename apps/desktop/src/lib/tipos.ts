@@ -195,6 +195,27 @@ export interface Ticket {
  * más que cambiar el .env, así que la pantalla no puede dar por sentado
  * ninguno de los dos: lee el ancho de acá y rotula la vista previa con él.
  */
+/** Una impresora que la máquina ya tiene, para elegirla de una lista. */
+export interface ImpresoraDetectada {
+  nombre: string;
+  /** Lo que va en `ruta`. Null si todavía no se le puede escribir. */
+  ruta: string | null;
+  detalle: string;
+  /** En Windows, sin compartir no hay forma de mandarle bytes. */
+  listaParaUsar: boolean;
+}
+
+/** Lo que la pantalla manda al guardar. Todo opcional: se guarda de a partes. */
+export interface CambiosImpresora {
+  destino?: 'log' | 'usb' | 'red';
+  anchoMm?: 58 | 80;
+  ruta?: string | null;
+  host?: string | null;
+  puerto?: number;
+  corta?: boolean;
+  avance?: number;
+}
+
 export interface EstadoImpresora {
   destino: 'log' | 'usb' | 'red';
   anchoMm: number;

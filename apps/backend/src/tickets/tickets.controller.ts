@@ -12,16 +12,6 @@ export class TicketsController {
     private readonly impresora: ImpresoraService,
   ) {}
 
-  // Va ANTES de las rutas con :id — si no, Nest intenta resolver «impresora»
-  // como el id de un ticket y responde un 400 de ParseIntPipe.
-  //
-  // La pantalla lo usa para rotular la previsualización con el ancho real y
-  // para saber si el botón de imprimir tiene a dónde mandar el papel.
-  @Get('impresora')
-  estadoImpresora() {
-    return this.impresora.estado();
-  }
-
   // Verificar la impresora sin emitir un ticket real: el correlativo no se
   // reinicia nunca, así que probar cobrando dejaría números gastados en el
   // historial cada vez que se ajusta el papel.

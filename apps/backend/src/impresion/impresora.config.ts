@@ -1,12 +1,38 @@
-// Configuración de la impresora, leída del entorno.
+// Configuración de la impresora.
 //
-// Vive en el .env y no en la base porque es una propiedad de LA PC, no del
-// negocio: si mañana el local suma una segunda máquina con otra impresora,
-// cada una necesita la suya, y una fila en SQLite compartida diría lo mismo
-// para las dos. El día que haya que cambiarla desde Configuración, esto pasa
-// a ser una tabla y el resto del código no se entera.
+// No vive en la base porque es una propiedad de LA PC, no del negocio: si el
+// local suma una segunda máquina con otra térmica, cada una necesita la suya,
+// y una fila en SQLite compartida diría lo mismo para las dos.
+//
+// Pero tampoco vive ya en el .env. Esto se instala como programa nativo, y
+// ahí no hay repo donde editar un archivo ni terminal donde reiniciar nada:
+// se configura desde Configuración › Impresora y se guarda en un JSON al
+// lado de la base. El .env quedó como semilla —lo que se lea de ahí la
+// primera vez— para que las instalaciones que ya andan no cambien de
+// comportamiento al actualizar.
+//
+// Orden de precedencia: archivo guardado > variables de entorno > defaults.
 
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { ANCHO_58MM, ANCHO_80MM, columnasDeMm } from '../tickets/ticket.render';
+
+/**
+ * La carpeta de datos de esta instalación: base, avisos y config de máquina.
+ *
+ * En desarrollo es `apps/backend/datos`. Instalado, el Rust de Tauri le pasa
+ * el `AppData` del usuario por entorno, que es el único lugar de Windows
+ * donde un programa puede escribir sin permisos de administrador. Un solo
+ * lugar para todo lo que hay que respaldar.
+ */
+export function carpetaDeDatos(): string {
+  return resolve(process.env.LUJALO_DATOS_DIR?.trim() || join(process.cwd(), 'datos'));
+}
+
+const rutaArchivo = () => join(carpetaDeDatos(), 'impresora.json');
+
+/** Lo que se puede guardar. `columnas` no: sale del ancho, no se elige. */
+export type ConfigGuardable = Omit<ConfigImpresora, 'columnas'>;
 
 /**
  * A dónde salen los bytes.
@@ -53,6 +79,64 @@ const numero = (v: string | undefined, porDefecto: number) => {
 
 const booleano = (v: string | undefined, porDefecto: boolean) =>
   v == null || v === '' ? porDefecto : ['1', 'true', 'si', 'sí'].includes(v.toLowerCase());
+
+/**
+ * Deja los valores en el rango que la impresora admite.
+ *
+ * Se aplica tanto a lo que viene del entorno como a lo que llega por HTTP:
+ * un ancho de 72 mm o un avance de 900 líneas no tienen que poder guardarse,
+ * vengan de donde vengan.
+ */
+function normalizar(v: Partial<ConfigGuardable>, base: ConfigImpresora): ConfigImpresora {
+  const destino: DestinoImpresora =
+    v.destino === 'usb' || v.destino === 'red' || v.destino === 'log' ? v.destino : base.destino;
+  // 58 u 80 y nada más: son los dos anchos que el render sabe maquetar.
+  const anchoMm = v.anchoMm == null ? base.anchoMm : (Number(v.anchoMm) >= 80 ? 80 : 58);
+
+  return {
+    destino,
+    anchoMm,
+    columnas: columnasDeMm(anchoMm),
+    ruta: v.ruta === undefined ? base.ruta : (v.ruta?.trim() || null),
+    host: v.host === undefined ? base.host : (v.host?.trim() || null),
+    puerto: v.puerto == null ? base.puerto : numero(String(v.puerto), base.puerto),
+    // El default del corte sigue al ancho —las 80 mm traen guillotina y las
+    // 58 de gama baja no—, pero sólo mientras nadie lo haya elegido a mano.
+    corta: v.corta == null ? anchoMm >= 80 : Boolean(v.corta),
+    avance: v.avance == null ? base.avance : Math.min(20, Math.max(0, Number(v.avance) || 0)),
+    timeoutMs: v.timeoutMs == null ? base.timeoutMs : numero(String(v.timeoutMs), base.timeoutMs),
+  };
+}
+
+/**
+ * La configuración que rige: el archivo si existe, el entorno si no.
+ *
+ * Se relee en cada impresión en vez de cachearse al arrancar. Es leer un
+ * JSON de doscientos bytes —al lado de mandar bytes por USB no se nota— y a
+ * cambio cambiar de impresora desde la pantalla surte efecto en el ticket
+ * siguiente, sin reiniciar nada. Reiniciar el backend era justamente lo que
+ * no se puede pedir en un programa instalado.
+ */
+export function configVigente(): ConfigImpresora {
+  const delEntorno = leerConfigImpresora();
+  try {
+    const crudo = readFileSync(rutaArchivo(), 'utf8');
+    return normalizar(JSON.parse(crudo) as Partial<ConfigGuardable>, delEntorno);
+  } catch {
+    // No existe todavía, o quedó ilegible. En los dos casos el entorno es la
+    // respuesta correcta: es peor no imprimir que imprimir con lo anterior.
+    return delEntorno;
+  }
+}
+
+/** Guarda y devuelve cómo quedó. Crea la carpeta si es la primera vez. */
+export function guardarConfigImpresora(parcial: Partial<ConfigGuardable>): ConfigImpresora {
+  const efectiva = normalizar(parcial, configVigente());
+  const { columnas: _columnas, ...guardable } = efectiva;
+  mkdirSync(carpetaDeDatos(), { recursive: true });
+  writeFileSync(rutaArchivo(), JSON.stringify(guardable, null, 2), 'utf8');
+  return efectiva;
+}
 
 export function leerConfigImpresora(env: NodeJS.ProcessEnv = process.env): ConfigImpresora {
   const destinoCrudo = (env.IMPRESORA_DESTINO ?? 'log').toLowerCase();

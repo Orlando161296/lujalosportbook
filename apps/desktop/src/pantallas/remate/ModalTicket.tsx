@@ -27,7 +27,7 @@ export function ModalTicket({
   // que no tiene sentido volver a pedirlo cada vez que se abre un ticket.
   const impresora = useQuery({
     queryKey: ['impresora'],
-    queryFn: () => api.tickets.impresora(),
+    queryFn: api.impresora.estado,
     staleTime: Infinity,
   });
 

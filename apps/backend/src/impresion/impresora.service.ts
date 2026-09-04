@@ -7,7 +7,19 @@ import { join } from 'node:path';
 import {
   INICIALIZAR, TABLA_PC850, alinear, avanzar, CORTAR, codificarPC850,
 } from './escpos';
-import { ConfigImpresora, leerConfigImpresora } from './impresora.config';
+import {
+  ConfigGuardable, ConfigImpresora, configVigente, guardarConfigImpresora,
+} from './impresora.config';
+
+/** Una impresora que la máquina ya tiene instalada, para elegir de una lista. */
+export interface ImpresoraDetectada {
+  nombre: string;
+  /** Lo que hay que poner en `ruta`. Null si todavía no se puede escribir. */
+  ruta: string | null;
+  detalle: string;
+  /** En Windows, si no está compartida no hay forma de mandarle bytes. */
+  listaParaUsar: boolean;
+}
 
 /** Falla de impresión, con el destino adentro para que el mensaje sirva. */
 export class ImpresionFallida extends Error {
@@ -32,21 +44,39 @@ export class ImpresionFallida extends Error {
 @Injectable()
 export class ImpresoraService {
   private readonly log = new Logger('Impresora');
-  readonly config: ConfigImpresora;
 
   constructor() {
-    this.config = leerConfigImpresora();
-    this.log.log(
-      `Destino ${this.config.destino} · ${this.config.anchoMm} mm · ` +
-      `${this.config.columnas} columnas` +
-      (this.config.destino === 'usb' ? ` · ${this.config.ruta ?? 'SIN RUTA'}` : '') +
-      (this.config.destino === 'red' ? ` · ${this.config.host}:${this.config.puerto}` : ''),
-    );
+    this.log.log(this.resumen());
+  }
+
+  /**
+   * La configuración vigente, releída del disco cada vez.
+   *
+   * Antes se cacheaba en el constructor y cambiarla exigía reiniciar el
+   * backend. En un programa instalado eso no se le puede pedir a nadie: el
+   * operador cambia la impresora en Configuración y el ticket siguiente ya
+   * tiene que salir por la nueva.
+   */
+  get config(): ConfigImpresora {
+    return configVigente();
   }
 
   /** Las columnas contra las que hay que maquetar el ticket. */
   get columnas(): number {
     return this.config.columnas;
+  }
+
+  private resumen(c: ConfigImpresora = this.config): string {
+    return `Destino ${c.destino} · ${c.anchoMm} mm · ${c.columnas} columnas`
+      + (c.destino === 'usb' ? ` · ${c.ruta ?? 'SIN RUTA'}` : '')
+      + (c.destino === 'red' ? ` · ${c.host}:${c.puerto}` : '');
+  }
+
+  /** Guarda la configuración elegida desde la pantalla. */
+  guardar(parcial: Partial<ConfigGuardable>): ConfigImpresora {
+    const c = guardarConfigImpresora(parcial);
+    this.log.log(`Reconfigurada — ${this.resumen(c)}`);
+    return c;
   }
 
   /**
@@ -58,9 +88,13 @@ export class ImpresoraService {
    * reimprimir sí tiene que avisarle al operador.
    */
   async imprimir(texto: string): Promise<void> {
-    const bytes = this.armar(texto);
+    // Una sola lectura por impresión: si alguien guarda otra configuración
+    // justo en el medio, este ticket sale entero con la de antes en vez de
+    // mezclar el ancho de una con el destino de la otra.
+    const config = this.config;
+    const bytes = this.armar(texto, config);
 
-    switch (this.config.destino) {
+    switch (config.destino) {
       case 'log':
         // Sin impresora configurada el ticket va al log completo, no un
         // «no se pudo»: así el local puede operar y cobrar aunque la
@@ -69,23 +103,23 @@ export class ImpresoraService {
         return;
 
       case 'usb':
-        return this.aDispositivo(bytes);
+        return this.aDispositivo(bytes, config);
 
       case 'red':
-        return this.aRed(bytes);
+        return this.aRed(bytes, config);
     }
   }
 
   /** El ticket envuelto en los comandos de la impresora. */
-  private armar(texto: string): Buffer {
+  private armar(texto: string, config: ConfigImpresora): Buffer {
     const partes = [
       INICIALIZAR,
       TABLA_PC850,
       alinear(0),
       codificarPC850(texto.endsWith('\n') ? texto : `${texto}\n`),
-      avanzar(this.config.avance),
+      avanzar(config.avance),
     ];
-    if (this.config.corta) partes.push(CORTAR);
+    if (config.corta) partes.push(CORTAR);
     return Buffer.concat(partes);
   }
 
@@ -97,12 +131,12 @@ export class ImpresoraService {
    * escribe al recurso compartido: es la vía que no necesita un driver
    * nativo ni permisos de administrador.
    */
-  private async aDispositivo(bytes: Buffer): Promise<void> {
-    const ruta = this.config.ruta;
+  private async aDispositivo(bytes: Buffer, config: ConfigImpresora): Promise<void> {
+    const ruta = config.ruta;
     if (!ruta) {
       throw new ImpresionFallida(
         'USB',
-        new Error('falta IMPRESORA_RUTA en el .env (p. ej. /dev/usb/lp0)'),
+        new Error('no hay impresora elegida — Configuración › Impresora'),
       );
     }
     try {
@@ -145,10 +179,10 @@ export class ImpresoraService {
   }
 
   /** Impresora de red por el puerto RAW 9100. */
-  private aRed(bytes: Buffer): Promise<void> {
-    const { host, puerto, timeoutMs } = this.config;
+  private aRed(bytes: Buffer, config: ConfigImpresora): Promise<void> {
+    const { host, puerto, timeoutMs } = config;
     if (!host) {
-      throw new ImpresionFallida('red', new Error('falta IMPRESORA_HOST en el .env'));
+      throw new ImpresionFallida('red', new Error('falta la dirección de la impresora de red'));
     }
 
     return new Promise<void>((resolver, rechazar) => {
@@ -225,6 +259,92 @@ export class ImpresoraService {
     ];
 
     await this.imprimir(l.join('\n'));
+  }
+
+  /**
+   * Las impresoras que la máquina ya tiene instaladas.
+   *
+   * Existe para que nadie tenga que escribir una ruta a mano. En Windows se
+   * le pregunta al spooler, que es quien sabe: `Get-Printer` viene con el
+   * sistema desde el 8 y no hace falta instalar nada.
+   *
+   * Si la lista vuelve vacía no es un error —puede no haber ninguna—, así
+   * que nunca lanza: la pantalla ofrece igual escribir la ruta a mano.
+   */
+  async detectar(): Promise<ImpresoraDetectada[]> {
+    try {
+      return process.platform === 'win32'
+        ? await this.detectarWindows()
+        : await this.detectarUnix();
+    } catch (causa) {
+      this.log.warn(`No se pudieron listar las impresoras: ${(causa as Error).message}`);
+      return [];
+    }
+  }
+
+  private async detectarWindows(): Promise<ImpresoraDetectada[]> {
+    // -NoProfile para que no cargue el perfil del usuario (más rápido y no
+    // hereda funciones raras), y ConvertTo-Json porque parsear la tabla que
+    // imprime PowerShell por defecto se rompe con cualquier nombre largo.
+    const salida = await this.correr('powershell', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      'Get-Printer | Select-Object Name,ShareName,Shared,PortName | ConvertTo-Json -Compress',
+    ]);
+    if (!salida.trim()) return [];
+
+    // Con una sola impresora ConvertTo-Json devuelve el objeto suelto, no un
+    // array de uno. Sin esto la máquina con una sola térmica —el caso del
+    // local— era justo la que no listaba nada.
+    const crudo: unknown = JSON.parse(salida);
+    const filas = (Array.isArray(crudo) ? crudo : [crudo]) as {
+      Name?: string; ShareName?: string; Shared?: boolean; PortName?: string;
+    }[];
+
+    return filas.filter((f) => f.Name).map((f) => {
+      // Para mandar ESC/POS crudo hay que escribirle al recurso compartido:
+      // el nombre a secas es de la cola, no una ruta que se pueda abrir.
+      const compartida = Boolean(f.Shared && f.ShareName);
+      return {
+        nombre: f.Name!,
+        ruta: compartida ? `\\\\localhost\\${f.ShareName}` : null,
+        detalle: compartida
+          ? `Compartida como ${f.ShareName}`
+          : `Sin compartir · puerto ${f.PortName ?? '?'}`,
+        listaParaUsar: compartida,
+      };
+    });
+  }
+
+  /** En Linux la térmica es un archivo de dispositivo, no una cola. */
+  private async detectarUnix(): Promise<ImpresoraDetectada[]> {
+    const { readdir } = await import('node:fs/promises');
+
+    // Las dos carpetas donde el kernel deja las térmicas USB: /dev/usb/lp0 es
+    // lo habitual, y /dev/ticketera el nombre fijo que pone la regla de udev.
+    const encontradas = await Promise.all(
+      ['/dev/usb', '/dev'].map(async (base) => {
+        const hijos = await readdir(base).catch(() => [] as string[]);
+        return hijos
+          .filter((n) => /^lp\d+$/.test(n) || n === 'ticketera')
+          .map((n) => `${base}/${n}`);
+      }),
+    );
+
+    return [...new Set(encontradas.flat())].map((ruta) => ({
+      nombre: ruta,
+      ruta,
+      detalle: ruta === '/dev/ticketera' ? 'Nombre fijo por regla de udev' : 'Dispositivo USB',
+      listaParaUsar: true,
+    }));
+  }
+
+  private correr(cmd: string, args: string[]): Promise<string> {
+    return new Promise((resolver, rechazar) => {
+      execFile(cmd, args, { timeout: 10_000, windowsHide: true }, (error, salida) => {
+        if (error) rechazar(error);
+        else resolver(salida);
+      });
+    });
   }
 
   /**
