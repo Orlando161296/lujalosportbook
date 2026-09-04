@@ -47,8 +47,8 @@ export function Tablero() {
   const clientes = useQuery({ queryKey: ['clientes'], queryFn: api.clientes.listar });
 
   // Formulario de alta. Vive acá y no en un componente aparte porque el
-  // operador lo usa como una sola secuencia de teclado: monto → jugador →
-  // número → Enter, sin soltar las manos.
+  // operador lo usa como una sola secuencia de teclado: número → monto →
+  // jugador → Enter, sin soltar las manos.
   const [monto, setMonto] = useState('');
   const [moneda, setMoneda] = useState<Moneda>('Bs');
   const [jugador, setJugador] = useState('');
@@ -60,9 +60,13 @@ export function Tablero() {
   // hacía que escribir en uno cambiara el otro sin que se notara.
   const [numeroRetiro, setNumeroRetiro] = useState('');
 
-  // El foco se mueve a mano por los tres campos. Enter encadena N° →
-  // Jugador → Monto y sólo graba en el último; antes Enter en cualquiera
-  // disparaba la jugada incompleta y el operador tenía que ir con el mouse.
+  // El foco se mueve a mano por los tres campos. Enter encadena N° → Monto →
+  // Jugador y sólo graba en el último; antes Enter en cualquiera disparaba la
+  // jugada incompleta y el operador tenía que ir con el mouse.
+  //
+  // El monto va antes que el jugador porque el rematador canta primero la
+  // cifra y después a quién se la adjudica: así el operador teclea en el
+  // mismo orden en que escucha, sin retener el número en la cabeza.
   const refNumero = useRef<HTMLInputElement>(null);
   const refJugador = useRef<HTMLInputElement>(null);
   const refMonto = useRef<HTMLInputElement>(null);
@@ -283,9 +287,7 @@ export function Tablero() {
                 onChange={(e) => setNumero(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter') return;
-                  // Con LA CASA marcada el campo Jugador está deshabilitado y
-                  // no acepta foco: la cadena saltea directo al monto.
-                  (esCasa ? refMonto : refJugador).current?.focus();
+                  refMonto.current?.focus();
                 }}
                 className="text-center"
                 style={
@@ -319,34 +321,6 @@ export function Tablero() {
               ? ejemplarElegido.nombre
               : <span className="font-sans text-[13px] text-gris">Escribí el número del caballo</span>}
           </p>
-
-          <Campo>
-            <Etiqueta>Jugador</Etiqueta>
-            <div className="flex gap-1.5">
-              <Autocompletar
-                ref={refJugador}
-                className="flex-1"
-                valor={esCasa ? 'LA CASA' : jugador}
-                disabled={esCasa}
-                placeholder="Nombre o apodo"
-                sugerencias={sugerenciasJugador}
-                // En mayúsculas desde la primera tecla: es como se va a ver
-                // en el tablero y en el TV.
-                onCambio={(v) => setJugador(v.toUpperCase())}
-                // Enter sin sugerencia marcada sigue la secuencia de carga.
-                onConfirmar={() => refMonto.current?.focus()}
-              />
-              <button
-                type="button"
-                onClick={() => setEsCasa((v) => !v)}
-                title="El caballo se lo queda la casa"
-                className={`rounded border px-2 text-[10.5px] font-bold uppercase tracking-wider
-                  ${esCasa ? 'border-magenta bg-magenta text-white' : 'border-magenta text-magenta'}`}
-              >
-                Casa
-              </button>
-            </div>
-          </Campo>
 
           <Campo>
             <div className="flex items-baseline justify-between">
@@ -392,7 +366,11 @@ export function Tablero() {
                   requestAnimationFrame(() => campo.setSelectionRange(r.cursor, r.cursor));
                   return;
                 }
-                if (e.key === 'Enter') registrar.mutate();
+                if (e.key !== 'Enter') return;
+                // Con LA CASA marcada el campo Jugador está deshabilitado y no
+                // acepta foco: no hay a dónde seguir y la jugada se graba acá.
+                if (esCasa) registrar.mutate();
+                else refJugador.current?.focus();
               }}
             />
             {tasa && moneda === 'Bs' && monto && Number.isFinite(parsearMonto(monto)) && (
@@ -400,6 +378,35 @@ export function Tablero() {
                 ≈ {usd(parsearMonto(monto) || 0, tasa)}
               </span>
             )}
+          </Campo>
+
+          <Campo>
+            <Etiqueta>Jugador</Etiqueta>
+            <div className="flex gap-1.5">
+              <Autocompletar
+                ref={refJugador}
+                className="flex-1"
+                valor={esCasa ? 'LA CASA' : jugador}
+                disabled={esCasa}
+                placeholder="Nombre o apodo"
+                sugerencias={sugerenciasJugador}
+                // En mayúsculas desde la primera tecla: es como se va a ver
+                // en el tablero y en el TV.
+                onCambio={(v) => setJugador(v.toUpperCase())}
+                // Último campo de la cadena: Enter sin sugerencia marcada ya
+                // no pasa a otro campo, graba la jugada.
+                onConfirmar={() => registrar.mutate()}
+              />
+              <button
+                type="button"
+                onClick={() => setEsCasa((v) => !v)}
+                title="El caballo se lo queda la casa"
+                className={`rounded border px-2 text-[10.5px] font-bold uppercase tracking-wider
+                  ${esCasa ? 'border-magenta bg-magenta text-white' : 'border-magenta text-magenta'}`}
+              >
+                Casa
+              </button>
+            </div>
           </Campo>
 
           <Boton
