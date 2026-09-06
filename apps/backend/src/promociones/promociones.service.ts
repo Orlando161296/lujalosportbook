@@ -113,6 +113,7 @@ export class PromocionesService {
 
     const creada = await this.prisma.promocion.create({
       data: {
+        tipo: 'imagen',
         archivo: nombreEnDisco,
         nombre: archivo.originalname.slice(0, 120),
         mime: archivo.mimetype,
@@ -122,16 +123,59 @@ export class PromocionesService {
     });
 
     this.eventos.promocionesCambiaron();
-    this.log.log(`Alta «${creada.nombre}» (${(archivo.size / 1024).toFixed(0)} KB)`);
+    this.log.log(`Alta imagen «${creada.nombre}» (${(archivo.size / 1024).toFixed(0)} KB)`);
     return creada;
   }
 
-  /** Bajar o volver a subir una sin perder el archivo. */
-  async cambiarActiva(id: number, activa: boolean) {
-    await this.buscar(id);
-    const promocion = await this.prisma.promocion.update({ where: { id }, data: { activa } });
+  /**
+   * Un aviso de texto: la frase que desfila en el cintillo, sin archivo.
+   *
+   * Va al final de la fila igual que una imagen —lo que se carga hoy no se
+   * cuela adelante de lo que ya está rotando— y `nombre` guarda la propia
+   * frase recortada, que es con lo que se la reconoce en la lista.
+   */
+  async crearTexto(textoCrudo: string) {
+    const texto = textoCrudo.trim();
+    if (!texto) throw new BadRequestException('El aviso no puede estar vacío.');
+
+    const ultima = await this.prisma.promocion.findFirst({ orderBy: { orden: 'desc' } });
+
+    const creada = await this.prisma.promocion.create({
+      data: {
+        tipo: 'texto',
+        texto,
+        nombre: texto.slice(0, 120),
+        orden: (ultima?.orden ?? 0) + 1,
+      },
+    });
+
     this.eventos.promocionesCambiaron();
-    return promocion;
+    this.log.log(`Alta texto «${creada.nombre}»`);
+    return creada;
+  }
+
+  /** Corregir la frase de un aviso de texto, o bajarlo/levantarlo de paso. */
+  async editar(id: number, cambios: { activa?: boolean; texto?: string }) {
+    const promocion = await this.buscar(id);
+
+    const texto = cambios.texto?.trim();
+    if (texto !== undefined) {
+      if (promocion.tipo !== 'texto') {
+        throw new BadRequestException('Sólo los avisos de texto se pueden editar.');
+      }
+      if (!texto) throw new BadRequestException('El aviso no puede estar vacío.');
+    }
+
+    const actualizada = await this.prisma.promocion.update({
+      where: { id },
+      data: {
+        ...(cambios.activa !== undefined && { activa: cambios.activa }),
+        ...(texto !== undefined && { texto, nombre: texto.slice(0, 120) }),
+      },
+    });
+
+    this.eventos.promocionesCambiaron();
+    return actualizada;
   }
 
   async borrar(id: number) {
@@ -142,9 +186,12 @@ export class PromocionesService {
     // nadie. Al revés dejaría una ficha apuntando a un archivo que no está,
     // y eso sí rompe la pizarra.
     await this.prisma.promocion.delete({ where: { id } });
-    await unlink(join(this.carpeta, promocion.archivo)).catch((causa) => {
-      this.log.warn(`Ficha ${id} borrada, pero quedó el archivo: ${(causa as Error).message}`);
-    });
+    // Un aviso de texto no tiene archivo que limpiar.
+    if (promocion.archivo) {
+      await unlink(join(this.carpeta, promocion.archivo)).catch((causa) => {
+        this.log.warn(`Ficha ${id} borrada, pero quedó el archivo: ${(causa as Error).message}`);
+      });
+    }
 
     this.eventos.promocionesCambiaron();
     this.log.log(`Baja «${promocion.nombre}»`);
@@ -159,13 +206,16 @@ export class PromocionesService {
    */
   async archivoDe(id: number) {
     const promocion = await this.buscar(id);
+    if (!promocion.archivo) {
+      throw new NotFoundException('Ese aviso es de texto, no tiene imagen.');
+    }
     const ruta = join(this.carpeta, promocion.archivo);
     try {
       await stat(ruta);
     } catch {
       throw new NotFoundException('La imagen ya no está en el disco.');
     }
-    return { flujo: createReadStream(ruta), mime: promocion.mime };
+    return { flujo: createReadStream(ruta), mime: promocion.mime ?? 'application/octet-stream' };
   }
 
   private async buscar(id: number) {

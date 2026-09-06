@@ -377,24 +377,34 @@ model CobroJugada {
   @@map("cobro_jugadas")
 }
 
-/// Imágenes promocionales del pie de la pizarra.
+/// Avisos del pie de la pizarra: imágenes de patrocinantes y textos de la casa.
 ///
 /// La franja de abajo del televisor es espacio vendible —patrocinantes,
 /// avisos de la casa— y quien lo administra es la gente del local, no
-/// alguien que pueda tocar código. Por eso las imágenes se suben desde
-/// Configuración y viven en disco, no dentro de la base: un .db que engorda
-/// con binarios se vuelve lento de respaldar, y el respaldo del día es lo
-/// único que salva una jornada.
+/// alguien que pueda tocar código. Por eso se cargan desde Configuración: las
+/// imágenes se suben y viven en disco —un .db que engorda con binarios se
+/// vuelve lento de respaldar, y el respaldo del día es lo único que salva una
+/// jornada— y los textos son una frase que se escribe ahí mismo.
+///
+/// En el televisor todo desfila junto en un cintillo continuo, en el `orden`
+/// en que está la lista.
 model Promocion {
   id       Int      @id @default(autoincrement())
+  /// `imagen` o `texto`. Manda qué campos vienen cargados: una imagen trae
+  /// `archivo`/`mime`/`bytes`; un texto trae `texto`.
+  tipo     String   @default("imagen")
   /// Nombre del archivo en la carpeta de promociones. Lo genera el backend:
-  /// el nombre que trae el navegador no es de fiar como ruta.
-  archivo  String   @unique
+  /// el nombre que trae el navegador no es de fiar como ruta. Nulo en los
+  /// avisos de texto.
+  archivo  String?  @unique
+  /// La frase del cintillo, en los avisos de texto. Nula en las imágenes.
+  texto    String?
   /// El nombre con el que el usuario la subió, para poder reconocerla en la
-  /// pantalla de administración.
+  /// pantalla de administración. En los textos es la propia frase, recortada.
   nombre   String
-  mime     String
-  bytes    Int
+  /// Tipo MIME y peso del archivo. Nulos en los avisos de texto.
+  mime     String?
+  bytes    Int?
   /// Orden de aparición en la rotación del pie.
   orden    Int      @default(0)
   /// Bajarla sin borrarla: el patrocinante que no renovó este mes puede

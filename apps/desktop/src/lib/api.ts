@@ -253,7 +253,12 @@ export const api = {
       f.append('imagen', archivo, archivo.name);
       return subir<Promocion>('/promociones', f);
     },
-    /** Bajar o volver a levantar sin perder el archivo. */
+    /** Un aviso de texto para el cintillo, sin archivo. */
+    crearTexto: (texto: string) => post<Promocion>('/promociones/texto', { texto }),
+    /** Corregir la frase de un aviso de texto ya cargado. */
+    editarTexto: (id: number, texto: string) =>
+      patch<Promocion>(`/promociones/${id}`, { texto }),
+    /** Bajar o volver a levantar sin perder el aviso. */
     cambiarActiva: (id: number, activa: boolean) =>
       patch<Promocion>(`/promociones/${id}`, { activa }),
     borrar: (id: number) => del<void>(`/promociones/${id}`),

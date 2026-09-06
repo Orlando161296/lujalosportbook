@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -6,7 +6,7 @@ import { socket, EVENTOS } from '../../lib/socket';
 import { bs, fechaLarga } from '../../lib/formato';
 import { totalesDeTabla, useCarrera } from '../../hooks/useCarrera';
 import { usePromociones } from '../../hooks/usePromociones';
-import type { ColorNumero, Jugada } from '../../lib/tipos';
+import type { ColorNumero, Jugada, Promocion } from '../../lib/tipos';
 import logo from '../../assets/logo-lujalo.png';
 
 /**
@@ -470,42 +470,56 @@ const MARGEN_SEGURO = 0.96;
  * el operador vino a hacer algo con ella. Ahí la pista reaparece sola.
  */
 /**
- * Cuántos segundos queda cada aviso antes de pasar al siguiente.
+ * A qué velocidad corre el cintillo, en píxeles por segundo.
  *
- * Doce es lo que tarda alguien en levantar la vista del mostrador, leer y
- * volver a lo suyo. Más corto y el aviso se pierde; más largo y con dos
- * patrocinantes el segundo casi no aparece durante una carrera.
+ * Fija: la duración de la vuelta sale de multiplicarla por lo que mida el
+ * contenido, así que más avisos es una vuelta más larga y no un cintillo más
+ * rápido. 90 px/s deja leer una frase de mostrador sin que el ojo tenga que
+ * perseguirla —a la distancia del salón, un texto que cruza los 1116 px de
+ * la franja tarda unos trece segundos.
  */
-const SEGUNDOS_POR_AVISO = 12;
+const CINTILLO_PX_POR_SEGUNDO = 90;
 
 /**
- * La franja de avisos del pie.
+ * El cintillo de avisos del pie.
  *
- * Las imágenes se apilan todas en el DOM y sólo se cambia la opacidad, en
- * vez de montar y desmontar la que toca. Así el navegador no vuelve a pedir
- * ni a decodificar nada en cada vuelta: la primera pasada las deja en
- * memoria y el resto del día la rotación no cuesta. En una pantalla que está
- * encendida ocho horas, esa diferencia es la que evita el parpadeo blanco
- * entre aviso y aviso.
+ * Imágenes de patrocinante y frases de la casa desfilan juntas de derecha a
+ * izquierda, en un bucle sin corte. La lista se pinta repetida en la pista y
+ * la animación la corre exactamente el ancho de UNA copia: cuando la primera
+ * termina de salir por la izquierda, la siguiente ya está calzada detrás y
+ * el salto de vuelta a cero no se ve.
+ *
+ * El ancho real del contenido no se sabe hasta que el navegador maquetó las
+ * imágenes, así que se mide con un ref —y se vuelve a medir cuando cada
+ * imagen termina de cargar, porque hasta entonces ocupa cero— y de ahí sale
+ * la duración. Sin medida la pista queda quieta, para no arrancar con un
+ * tirón.
  */
 function Patrocinantes() {
   const promociones = usePromociones();
-  const [indice, setIndice] = useState(0);
   const marco = 'border-2 border-pizarra-marco';
 
-  useEffect(() => {
-    // Con uno solo no hay nada que rotar, y el intervalo sería un timer
-    // corriendo todo el día para no hacer nada.
-    if (promociones.length <= 1) {
-      setIndice(0);
-      return;
-    }
-    const t = setInterval(
-      () => setIndice((n) => (n + 1) % promociones.length),
-      SEGUNDOS_POR_AVISO * 1000,
-    );
-    return () => clearInterval(t);
-  }, [promociones.length]);
+  const cajaRef = useRef<HTMLDivElement>(null);
+  const tramoRef = useRef<HTMLDivElement>(null);
+  const [tramoPx, setTramoPx] = useState(0);
+  const [cajaPx, setCajaPx] = useState(0);
+
+  useLayoutEffect(() => {
+    const medir = () => {
+      setTramoPx(tramoRef.current?.offsetWidth ?? 0);
+      setCajaPx(cajaRef.current?.offsetWidth ?? 0);
+    };
+    medir();
+    // Las imágenes terminan de cargar después del primer render y ahí cambia
+    // el ancho del tramo.
+    const imgs = Array.from(tramoRef.current?.querySelectorAll('img') ?? []);
+    imgs.forEach((img) => img.addEventListener('load', medir));
+    window.addEventListener('resize', medir);
+    return () => {
+      imgs.forEach((img) => img.removeEventListener('load', medir));
+      window.removeEventListener('resize', medir);
+    };
+  }, [promociones]);
 
   if (promociones.length === 0) {
     return (
@@ -521,27 +535,59 @@ function Patrocinantes() {
     );
   }
 
+  // Copias suficientes para que la pista nunca sea más corta que la franja
+  // más un tramo: si no, al correrse un tramo entero quedaría un hueco negro
+  // entrando por la derecha. Con avisos que ya sobrepasan la franja alcanzan
+  // dos; con uno solo y corto hacen falta más.
+  const copias = tramoPx > 0 ? Math.max(2, Math.ceil(cajaPx / tramoPx) + 1) : 2;
+  const listo = tramoPx > 0;
+  const dur = listo ? tramoPx / CINTILLO_PX_POR_SEGUNDO : 0;
+
   return (
-    <div className={`relative overflow-hidden bg-carbon ${marco}`}>
-      {promociones.map((p, n) => (
-        <img
-          key={p.id}
-          src={api.promociones.imagen(p.id)}
-          alt=""
-          // `cover` y no `contain`: el listón es de 1116 × 112, casi 10:1, y
-          // con `contain` una imagen de proporción normal entraba ajustada por
-          // el alto y quedaba diminuta —un logo cuadrado ocupaba el 10% del
-          // ancho—. Cubrir llena la franja siempre; el precio es que lo que
-          // sobra por arriba y por abajo se recorta, así que el aviso hay que
-          // armarlo con esa proporción (lo dice la pantalla de carga).
-          className="absolute inset-0 h-full w-full object-cover transition-opacity duration-700"
-          // El índice puede quedar fuera de rango un instante si alguien
-          // borra un aviso justo en la vuelta: el módulo lo devuelve adentro
-          // sin dejar la franja en negro.
-          style={{ opacity: n === indice % promociones.length ? 1 : 0 }}
-        />
-      ))}
+    <div ref={cajaRef} className={`relative overflow-hidden bg-carbon ${marco}`}>
+      <div
+        className="cintillo-pista absolute inset-y-0 left-0 flex items-stretch"
+        style={{
+          ['--cintillo-tramo' as string]: `${tramoPx}px`,
+          ['--cintillo-dur' as string]: `${dur}s`,
+          animationPlayState: listo ? 'running' : 'paused',
+        }}
+      >
+        {Array.from({ length: copias }, (_, c) => (
+          <div
+            key={c}
+            ref={c === 0 ? tramoRef : undefined}
+            className="flex flex-none items-stretch"
+            aria-hidden={c > 0}
+          >
+            {promociones.map((p) => <AvisoCintillo key={p.id} promocion={p} />)}
+          </div>
+        ))}
+      </div>
     </div>
+  );
+}
+
+/** Un eslabón del cintillo: la imagen del patrocinante o la frase de la casa. */
+function AvisoCintillo({ promocion: p }: { promocion: Promocion }) {
+  const borde = 'flex flex-none items-center border-r-2 border-pizarra-marco/60';
+  if (p.tipo === 'texto') {
+    return (
+      <span
+        className={`${borde} whitespace-nowrap px-14 font-cond text-[34px] font-semibold
+          uppercase leading-none tracking-[0.06em] text-pizarra-amarillo`}
+      >
+        {p.texto}
+      </span>
+    );
+  }
+  return (
+    <span className={`${borde} px-6`}>
+      {/* `contain` y a alto completo: en el cintillo la imagen ya no tiene
+          que llenar una franja de proporción fija, entra con la suya y el
+          ancho que ocupe manda en la duración de la vuelta. */}
+      <img src={api.promociones.imagen(p.id)} alt="" className="h-full w-auto object-contain" />
+    </span>
   );
 }
 

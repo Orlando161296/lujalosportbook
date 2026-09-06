@@ -132,4 +132,27 @@
      debería apagar un indicador del que depende la lectura del tablero. */
   .late-ganador { animation-duration: 1.4s !important; }
   .late-cartel  { animation-duration: 1.4s !important; }
+
+  /* Y el cintillo del pie es un cintillo: si no se desplaza, un aviso más
+     largo que la franja queda cortado y nadie lo lee entero. El local corre
+     esta pantalla en un TV, no en una PC de alguien sensible al movimiento. */
+  .cintillo-pista { animation-duration: var(--cintillo-dur, 40s) !important; }
+}
+
+/* El cintillo de avisos del pie de la pizarra.
+ *
+ * La pista lleva la lista de avisos repetida y se corre exactamente el ancho
+ * de una copia: cuando la primera termina de salir por la izquierda, la
+ * segunda está calzada detrás y el salto de vuelta a 0 no se ve. La distancia
+ * y la duración las pone la pizarra por variable, porque dependen de cuántos
+ * avisos haya y de cuánto miden. La velocidad en píxeles por segundo es
+ * constante: más avisos es una vuelta más larga, no más rápida. */
+@keyframes cintillo {
+  from { transform: translateX(0); }
+  to   { transform: translateX(calc(-1 * var(--cintillo-tramo, 0px))); }
+}
+
+.cintillo-pista {
+  animation: cintillo var(--cintillo-dur, 40s) linear infinite;
+  will-change: transform;
 }

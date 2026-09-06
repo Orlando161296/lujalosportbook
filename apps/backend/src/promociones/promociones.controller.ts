@@ -4,7 +4,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PromocionesService, ArchivoSubido } from './promociones.service';
-import { CambiarActivaDto } from './dto';
+import { EditarTextoDto, TextoDto } from './dto';
 
 /**
  * Techo duro de multer, muy por encima del máximo del producto.
@@ -63,9 +63,16 @@ export class PromocionesController {
     return this.promociones.subir(imagen);
   }
 
+  /** Un aviso de texto para el cintillo, sin archivo. */
+  @Post('texto')
+  crearTexto(@Body() dto: TextoDto) {
+    return this.promociones.crearTexto(dto.texto);
+  }
+
+  /** Bajar/levantar cualquier aviso, y corregir la frase de uno de texto. */
   @Patch(':id')
-  cambiarActiva(@Param('id', ParseIntPipe) id: number, @Body() dto: CambiarActivaDto) {
-    return this.promociones.cambiarActiva(id, dto.activa);
+  editar(@Param('id', ParseIntPipe) id: number, @Body() dto: EditarTextoDto) {
+    return this.promociones.editar(id, dto);
   }
 
   @Delete(':id')

@@ -385,37 +385,36 @@ function Impresora() {
                       </div>
                       {d.ruta === i.donde
                         ? <Pildora tono="ok">En uso</Pildora>
-                        : d.listaParaUsar
-                          ? (
-                            <Boton disabled={guardando}
-                              onClick={() => guardar.mutate({ destino: 'usb', ruta: d.ruta })}>
-                              Usar esta
-                            </Boton>
-                          )
-                          // En Windows, a una impresora sin compartir no se le
-                          // puede escribir: el nombre es el de la cola, no una
-                          // ruta que se pueda abrir.
-                          : <span className="text-[12px] font-semibold text-naranja">Hay que compartirla</span>}
+                        : (
+                          <Boton disabled={guardando}
+                            onClick={() => guardar.mutate({ destino: 'usb', ruta: d.ruta })}>
+                            Usar esta
+                          </Boton>
+                        )}
                     </div>
                   ))}
 
                   {(detectadas.data ?? []).length === 0 && (
                     <p className="text-[13px] leading-snug text-gris">
-                      No se encontró ninguna. En Windows la térmica tiene que estar
-                      compartida desde «Impresoras y dispositivos», con un nombre sin
-                      espacios. Si ya sabés la ruta, ponela abajo.
+                      No se encontró ninguna impresora instalada. Instalá la térmica
+                      desde «Impresoras y dispositivos» y tocá «Buscar de nuevo». Si
+                      ya sabés la ruta, ponela abajo.
                     </p>
                   )}
                 </div>
               )}
 
+              <p className="text-[12.5px] leading-snug text-gris">
+                Elegí la térmica de la lista y listo — ya no hace falta compartirla.
+              </p>
+
               <Campo>
-                <Etiqueta>…o escribí la ruta</Etiqueta>
+                <Etiqueta>…o escribí el nombre / la ruta</Etiqueta>
                 <div className="flex gap-2">
                   <Entrada
                     className="flex-1"
                     value={rutaManual}
-                    placeholder={i.donde ?? '\\\\localhost\\TICKETERA'}
+                    placeholder={i.donde ?? 'TICKETERA  ·  o  \\\\localhost\\TICKETERA'}
                     onChange={(e) => setRutaManual(e.target.value)}
                   />
                   <Boton disabled={guardando || !rutaManual.trim()}
@@ -917,12 +916,28 @@ function Promociones() {
   const qc = useQueryClient();
   const lista = useQuery({ queryKey: ['promociones'], queryFn: api.promociones.listar });
   const [entrada, setEntrada] = useState<HTMLInputElement | null>(null);
+  const [texto, setTexto] = useState('');
 
   const refrescar = () => qc.invalidateQueries({ queryKey: ['promociones'] });
 
   const subir = useMutation({
     mutationFn: (archivo: File) => api.promociones.subir(archivo),
     onSuccess: () => { refrescar(); avisar.exito('Aviso cargado. Ya está en el televisor.'); },
+    onError: (e: Error) => avisar.error(e.message),
+  });
+  const agregarTexto = useMutation({
+    mutationFn: (frase: string) => api.promociones.crearTexto(frase),
+    onSuccess: () => {
+      refrescar();
+      setTexto('');
+      avisar.exito('Aviso cargado. Ya está en el cintillo.');
+    },
+    onError: (e: Error) => avisar.error(e.message),
+  });
+  const editarTexto = useMutation({
+    mutationFn: ({ id, frase }: { id: number; frase: string }) =>
+      api.promociones.editarTexto(id, frase),
+    onSuccess: () => { refrescar(); avisar.exito('Aviso corregido.'); },
     onError: (e: Error) => avisar.error(e.message),
   });
   const alternar = useMutation({
@@ -938,40 +953,64 @@ function Promociones() {
   });
 
   const activas = (lista.data ?? []).filter((p) => p.activa).length;
+  const frase = texto.trim();
 
   return (
     <>
       <Titulo
         texto="Pizarra · avisos"
-        nota="Las imágenes que rotan en la franja de abajo del televisor. Se muestran una tras otra, en este orden."
+        nota="Lo que desfila en el cintillo de abajo del televisor: imágenes de patrocinante y frases de la casa. Pasan una tras otra, en este orden."
       />
 
-      <div className="flex max-w-[860px] items-center gap-2.5">
-        <input
-          ref={setEntrada}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className="hidden"
-          onChange={(e) => {
-            const archivo = e.target.files?.[0];
-            if (archivo) subir.mutate(archivo);
-            // Se limpia para que subir DOS VECES el mismo archivo dispare el
-            // change las dos veces: sin esto la segunda no hace nada y parece
-            // que la pantalla se colgó.
-            e.target.value = '';
-          }}
-        />
-        <Boton tono="oscuro" disabled={subir.isPending} onClick={() => entrada?.click()}>
-          {subir.isPending ? 'Subiendo…' : '+ Subir aviso'}
-        </Boton>
-        {/* La medida va acá y no en un instructivo aparte: es el dato que
-            decide si el aviso se ve bien, y el momento de saberlo es antes de
-            elegir el archivo. La franja es casi 10:1, así que una imagen de
-            proporción común se recorta arriba y abajo para poder llenarla. */}
-        <span className="text-[13px] text-gris">
-          JPG, PNG, WEBP o GIF · hasta 8 MB · <b>1116 × 112 px</b> (franja larga y baja;
-          otras proporciones se recortan arriba y abajo)
-        </span>
+      <div className="flex max-w-[860px] flex-col gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <input
+            ref={setEntrada}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const archivo = e.target.files?.[0];
+              if (archivo) subir.mutate(archivo);
+              // Se limpia para que subir DOS VECES el mismo archivo dispare el
+              // change las dos veces: sin esto la segunda no hace nada y parece
+              // que la pantalla se colgó.
+              e.target.value = '';
+            }}
+          />
+          <Boton tono="oscuro" disabled={subir.isPending} onClick={() => entrada?.click()}>
+            {subir.isPending ? 'Subiendo…' : '+ Subir imagen'}
+          </Boton>
+          {/* La medida va acá y no en un instructivo aparte: es el dato que
+              decide si el aviso se ve bien, y el momento de saberlo es antes de
+              elegir el archivo. En el cintillo la imagen va a alto completo con
+              su proporción, así que ya no se recorta —pero una franja larga y
+              baja es la que mejor acompaña al texto. */}
+          <span className="text-[13px] text-gris">
+            JPG, PNG, WEBP o GIF · hasta 8 MB · va a <b>112 px de alto</b>, ideal
+            una franja larga y baja (≈ 1116 × 112 px)
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <Entrada
+            value={texto}
+            maxLength={200}
+            placeholder="Escribí un aviso: «Hoy paga la casa el 6to»"
+            className="flex-1"
+            onChange={(e) => setTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && frase) agregarTexto.mutate(frase);
+            }}
+          />
+          <Boton
+            tono="oscuro"
+            disabled={!frase || agregarTexto.isPending}
+            onClick={() => agregarTexto.mutate(frase)}
+          >
+            {agregarTexto.isPending ? 'Agregando…' : '+ Agregar texto'}
+          </Boton>
+        </div>
       </div>
 
       {lista.isPending ? <Cargando /> : (
@@ -987,30 +1026,42 @@ function Promociones() {
                 {(lista.data ?? []).map((p) => (
                   <tr key={p.id} className="border-b border-borde">
                     <td className="w-[150px] px-2.5 py-2">
-                      {/* Fondo a cuadros: casi todos los avisos vienen con
-                          transparencia y sobre blanco no se ve dónde termina
-                          la imagen. */}
-                      <div
-                        className="flex h-[52px] w-[130px] items-center justify-center overflow-hidden rounded border border-borde"
-                        style={{
-                          backgroundImage:
-                            'linear-gradient(45deg,#e8e4da 25%,transparent 25%,transparent 75%,#e8e4da 75%),'
-                            + 'linear-gradient(45deg,#e8e4da 25%,transparent 25%,transparent 75%,#e8e4da 75%)',
-                          backgroundSize: '12px 12px',
-                          backgroundPosition: '0 0, 6px 6px',
-                        }}
-                      >
-                        <img
-                          src={api.promociones.imagen(p.id)}
-                          alt={p.nombre}
-                          className="max-h-full max-w-full object-contain"
-                        />
-                      </div>
+                      {p.tipo === 'texto' ? (
+                        <div className="flex h-[52px] w-[130px] items-center justify-center rounded border border-borde bg-carbon">
+                          <span className="font-cond text-lg uppercase tracking-wide text-amarillo">
+                            Texto
+                          </span>
+                        </div>
+                      ) : (
+                        /* Fondo a cuadros: casi todos los avisos vienen con
+                           transparencia y sobre blanco no se ve dónde termina
+                           la imagen. */
+                        <div
+                          className="flex h-[52px] w-[130px] items-center justify-center overflow-hidden rounded border border-borde"
+                          style={{
+                            backgroundImage:
+                              'linear-gradient(45deg,#e8e4da 25%,transparent 25%,transparent 75%,#e8e4da 75%),'
+                              + 'linear-gradient(45deg,#e8e4da 25%,transparent 25%,transparent 75%,#e8e4da 75%)',
+                            backgroundSize: '12px 12px',
+                            backgroundPosition: '0 0, 6px 6px',
+                          }}
+                        >
+                          <img
+                            src={api.promociones.imagen(p.id)}
+                            alt={p.nombre}
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="px-2.5 py-2">
-                      <div className="font-semibold">{p.nombre}</div>
+                      <div className="font-semibold">
+                        {p.tipo === 'texto' ? `«${p.texto}»` : p.nombre}
+                      </div>
                       <div className="text-[13px] text-gris">
-                        {(p.bytes / 1024).toFixed(0)} KB · {fechaCorta(p.creadoEn)}
+                        {p.tipo === 'texto'
+                          ? `Aviso de texto · ${fechaCorta(p.creadoEn)}`
+                          : `${((p.bytes ?? 0) / 1024).toFixed(0)} KB · ${fechaCorta(p.creadoEn)}`}
                       </div>
                     </td>
                     <td className="px-2.5 py-2">
@@ -1018,15 +1069,27 @@ function Promociones() {
                     </td>
                     <td className="px-2.5 py-2 text-right">
                       <div className="flex justify-end gap-2">
+                        {p.tipo === 'texto' && (
+                          <Boton
+                            onClick={() => {
+                              const nueva = prompt('Texto del aviso:', p.texto ?? '')?.trim();
+                              if (nueva && nueva !== p.texto) {
+                                editarTexto.mutate({ id: p.id, frase: nueva });
+                              }
+                            }}
+                          >
+                            Editar
+                          </Boton>
+                        )}
                         <Boton onClick={() => alternar.mutate({ id: p.id, activa: !p.activa })}>
                           {p.activa ? 'Bajar del TV' : 'Poner en el TV'}
                         </Boton>
-                        {/* Confirmación porque el archivo se va del disco y no
-                            hay papelera: para sacarlo un rato está «Bajar». */}
+                        {/* Confirmación porque el aviso se va y no hay papelera:
+                            para sacarlo un rato está «Bajar». */}
                         <Boton
                           tono="destructivo"
                           onClick={() => {
-                            if (confirm(`¿Eliminar «${p.nombre}»? Se borra el archivo y no se puede deshacer.`)) {
+                            if (confirm(`¿Eliminar «${p.nombre}»? No se puede deshacer.`)) {
                               borrar.mutate(p.id);
                             }
                           }}

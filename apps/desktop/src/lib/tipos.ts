@@ -198,10 +198,10 @@ export interface Ticket {
 /** Una impresora que la máquina ya tiene, para elegirla de una lista. */
 export interface ImpresoraDetectada {
   nombre: string;
-  /** Lo que va en `ruta`. Null si todavía no se le puede escribir. */
-  ruta: string | null;
+  /** Lo que se guarda al elegirla: en Windows, el nombre de la cola. */
+  ruta: string;
   detalle: string;
-  /** En Windows, sin compartir no hay forma de mandarle bytes. */
+  /** Se puede usar ya. En Windows siempre: se imprime por el spooler. */
   listaParaUsar: boolean;
 }
 
@@ -245,14 +245,18 @@ export interface ResultadoCarrera {
 /** Un aviso del pie de la pizarra, cargado desde Configuración. */
 export interface Promocion {
   id: number;
-  /** Nombre del archivo en disco. La pantalla no lo usa: se muestra `nombre`. */
-  archivo: string;
-  /** Con el que se subió, para poder reconocerlo en la lista. */
+  /** `imagen` para las de patrocinante; `texto` para las frases del cintillo. */
+  tipo: 'imagen' | 'texto';
+  /** Nombre del archivo en disco. La pantalla no lo usa: se muestra `nombre`. Nulo en los textos. */
+  archivo: string | null;
+  /** La frase que desfila, en los avisos de texto. Nula en las imágenes. */
+  texto: string | null;
+  /** Con el que se subió, para poder reconocerlo en la lista. En los textos es la propia frase. */
   nombre: string;
-  mime: string;
-  bytes: number;
+  mime: string | null;
+  bytes: number | null;
   orden: number;
-  /** Bajada sin borrar: no sale en el televisor pero el archivo sigue cargado. */
+  /** Bajada sin borrar: no sale en el televisor pero sigue cargada. */
   activa: boolean;
   creadoEn: string;
 }
