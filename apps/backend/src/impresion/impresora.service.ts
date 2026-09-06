@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import {
   INICIALIZAR, TABLA_PC850, alinear, avanzar, CORTAR, codificarPC850,
 } from './escpos';
+import { imprimirEnColaWindows } from './cola-windows';
 import {
   ConfigGuardable, ConfigImpresora, configVigente, guardarConfigImpresora,
 } from './impresora.config';
@@ -14,10 +15,10 @@ import {
 /** Una impresora que la máquina ya tiene instalada, para elegir de una lista. */
 export interface ImpresoraDetectada {
   nombre: string;
-  /** Lo que hay que poner en `ruta`. Null si todavía no se puede escribir. */
-  ruta: string | null;
+  /** Lo que se guarda en `ruta`: en Windows, el nombre de la cola. */
+  ruta: string;
   detalle: string;
-  /** En Windows, si no está compartida no hay forma de mandarle bytes. */
+  /** Se puede elegir y usar ya. En Windows siempre: se imprime por el spooler. */
   listaParaUsar: boolean;
 }
 
@@ -124,12 +125,14 @@ export class ImpresoraService {
   }
 
   /**
-   * Escribe al dispositivo: `/dev/usb/lp0`, `/dev/ttyUSB0` o el nombre UNC
-   * de una impresora compartida en Windows (`\\localhost\TICKETERA`).
+   * Manda los bytes a la impresora elegida.
    *
-   * En Windows la térmica se comparte desde Impresoras y dispositivos y se
-   * escribe al recurso compartido: es la vía que no necesita un driver
-   * nativo ni permisos de administrador.
+   * - Windows, nombre de cola (lo normal) → por el spooler, trabajo RAW. No
+   *   hace falta compartir la impresora.
+   * - Windows, ruta UNC `\\host\cola` → recurso compartido. Queda para las
+   *   instalaciones que ya venían configuradas así.
+   * - Linux → `/dev/usb/lp0`, `/dev/ticketera`, `/dev/ttyUSB0`: es un archivo
+   *   de dispositivo y se le escribe directo.
    */
   private async aDispositivo(bytes: Buffer, config: ConfigImpresora): Promise<void> {
     const ruta = config.ruta;
@@ -139,6 +142,13 @@ export class ImpresoraService {
         new Error('no hay impresora elegida — Configuración › Impresora'),
       );
     }
+
+    // En Windows, todo lo que no sea una ruta UNC ni un dispositivo Unix es
+    // el nombre de una cola: se imprime por el spooler sin compartir nada.
+    if (process.platform === 'win32' && !ruta.startsWith('\\\\') && !ruta.startsWith('/dev/')) {
+      return this.aColaWindows(ruta, bytes);
+    }
+
     try {
       // 'w' y no 'a': un dispositivo de caracteres no tiene posición donde
       // agregar, y para el recurso compartido de Windows es la única forma
@@ -155,6 +165,15 @@ export class ImpresoraService {
         return this.aCompartidoWindows(ruta, bytes);
       }
       throw new ImpresionFallida(ruta, causa);
+    }
+  }
+
+  /** Trabajo RAW por el spooler de Windows, por nombre de cola. */
+  private async aColaWindows(nombreCola: string, bytes: Buffer): Promise<void> {
+    try {
+      await imprimirEnColaWindows(nombreCola, bytes);
+    } catch (causa) {
+      throw new ImpresionFallida(nombreCola, causa);
     }
   }
 
@@ -262,6 +281,15 @@ export class ImpresoraService {
   }
 
   /**
+   * Colas de impresión que Windows considera pura decoración para una
+   * térmica: PDF, XPS, fax, «enviar a OneNote». Se filtran de la lista para
+   * que el operador no las confunda con la impresora real; si por algo hay
+   * que usar una, queda el campo de ruta a mano.
+   */
+  private static readonly COLAS_VIRTUALES =
+    /(microsoft (xps|print to pdf)|onenote|^fax$|adobe pdf|anydesk|foxit|cutepdf|pdfcreator|snagit)/i;
+
+  /**
    * Las impresoras que la máquina ya tiene instaladas.
    *
    * Existe para que nadie tenga que escribir una ruta a mano. En Windows se
@@ -300,19 +328,21 @@ export class ImpresoraService {
       Name?: string; ShareName?: string; Shared?: boolean; PortName?: string;
     }[];
 
-    return filas.filter((f) => f.Name).map((f) => {
-      // Para mandar ESC/POS crudo hay que escribirle al recurso compartido:
-      // el nombre a secas es de la cola, no una ruta que se pueda abrir.
-      const compartida = Boolean(f.Shared && f.ShareName);
-      return {
-        nombre: f.Name!,
-        ruta: compartida ? `\\\\localhost\\${f.ShareName}` : null,
-        detalle: compartida
-          ? `Compartida como ${f.ShareName}`
-          : `Sin compartir · puerto ${f.PortName ?? '?'}`,
-        listaParaUsar: compartida,
-      };
-    });
+    return filas
+      .filter((f) => f.Name && !ImpresoraService.COLAS_VIRTUALES.test(f.Name))
+      .map((f) => {
+        // El nombre de la cola es lo que se guarda: se imprime por el spooler
+        // (trabajo RAW), que no necesita que la impresora esté compartida.
+        const compartida = Boolean(f.Shared && f.ShareName);
+        return {
+          nombre: f.Name!,
+          ruta: f.Name!,
+          detalle: compartida
+            ? `Compartida como ${f.ShareName} · puerto ${f.PortName ?? '?'}`
+            : `Puerto ${f.PortName ?? '?'}`,
+          listaParaUsar: true,
+        };
+      });
   }
 
   /** En Linux la térmica es un archivo de dispositivo, no una cola. */

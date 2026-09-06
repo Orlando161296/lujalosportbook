@@ -78,6 +78,10 @@ fn arrancar_backend(app: &tauri::AppHandle) -> Option<Child> {
     cmd.arg(&entrada)
         .current_dir(&recursos)
         .env("PUERTO", PUERTO.to_string())
+        // Producción: le dice al backend que está embebido para que recorte
+        // el log de arranque de Nest, que en disco lento se nota.
+        .env("NODE_ENV", "production")
+        .env("NODE_NO_WARNINGS", "1")
         // Rutas absolutas y explícitas: instalada, la app no corre desde
         // ninguna carpeta del repo y todo lo relativo al directorio de
         // trabajo apuntaría a Archivos de Programa, que es de sólo lectura.
@@ -103,13 +107,18 @@ fn arrancar_backend(app: &tauri::AppHandle) -> Option<Child> {
     // Esperarlo antes de mostrar la taquilla: si la ventana aparece primero,
     // la pantalla arranca con todas sus consultas en error y el operador ve
     // un tablero roto que se arregla solo unos segundos después.
+    //
+    // Sondeo cada 50 ms: el backend abre el puerto apenas Nest resolvió la
+    // inyección —la conexión a la base ya no bloquea el arranque— así que la
+    // ventana tiene que aparecer en cuanto contesta, sin un cuarto de segundo
+    // de más esperando el próximo intento.
     let limite = Instant::now() + Duration::from_secs(40);
     while Instant::now() < limite {
         if backend_responde() {
             println!("Backend listo.");
             return Some(hijo);
         }
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(50));
     }
 
     eprintln!("El backend no respondió a tiempo; la app abre igual y reintenta sola.");

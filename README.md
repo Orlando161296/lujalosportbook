@@ -37,12 +37,18 @@ igual puede cobrar: una impresora sin papel **nunca** tumba la emisión, porque
 para cuando falla la plata ya se recibió y el correlativo ya se gastó. Queda
 el botón «Imprimir» del ticket para volver a sacarlo.
 
-**En Windows.** La térmica tiene que estar compartida desde «Impresoras y
-dispositivos» con un nombre sin espacios; recién ahí se le pueden mandar bytes
-crudos. La pantalla marca cuáles están compartidas y cuáles no. El backend
-intenta escribir directo al recurso compartido y, si la cola no lo acepta, cae
-a volcar el trabajo a un temporal y copiarlo con `copy /b`, que es la vía que
-siempre funciona.
+**En Windows** se elige la térmica de la lista y ya — no hace falta
+compartirla. El backend le manda un trabajo **RAW** por el spooler llamando a
+`winspool.drv` (`OpenPrinter` / `StartDocPrinter` datatype RAW / `WritePrinter`)
+desde un PowerShell de una sola vez con `Add-Type`; es la receta de Microsoft
+(KB322091) y no mete módulos nativos en el sidecar. La lista sale de
+`Get-Printer` y filtra las colas que no son una térmica (PDF, XPS, fax,
+OneNote). Cada impresión lanza un `powershell` — agrega ~0,5–1 s al ticket.
+
+Sigue soportada la vía vieja: si en `Configuración › Impresora` se escribe una
+ruta UNC (`\\host\COLA`), el backend escribe al recurso compartido y, si la
+cola no lo acepta, cae a volcar el trabajo a un temporal y copiarlo con
+`copy /b`. Las instalaciones que ya venían configuradas así no cambian.
 
 **En Linux** (sólo desarrollo) el kernel numera las térmicas USB por orden de
 conexión, así que la ruta cambia sola si alguien la desenchufa. La regla de
@@ -253,9 +259,10 @@ Dos niveles, y la separación es deliberada:
   `CurrentUser` tiene un fallback de desarrollo que devuelve el usuario 1. Es
   lo primero a cerrar antes de que esto toque plata de verdad.
 - **Probar el driver contra la impresora real.** El ESC/POS está escrito y
-  verificado byte a byte, pero todavía no se enchufó a la térmica del local:
-  falta confirmar que esa máquina acepta `ESC t 2` (PC850) para los acentos,
-  y a qué dispositivo aparece cuando se conecta.
+  verificado byte a byte, y el envío RAW por el spooler está probado hasta que
+  el spooler acepta el trabajo —falta la térmica del local para confirmar que
+  los bytes salen como ticket, que acepta `ESC t 2` (PC850) para los acentos,
+  y con qué nombre aparece la cola.
 - **Empaquetado Windows.** Falta compilar el backend como sidecar y reponer
   `bundle.externalBin` en `tauri.conf.json` (se quitó para poder correr en
   desarrollo). Los íconos de `src-tauri/icons/` son un placeholder: hay que
