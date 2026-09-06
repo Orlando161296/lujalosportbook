@@ -1,6 +1,6 @@
 [package]
 name = "lujalo-sportsbook"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sistema de apuestas hípicas Lujalo — taquilla + pizarra pública"
 edition = "2021"
 
