@@ -556,13 +556,25 @@ function Patrocinantes() {
   if (promociones.length === 0) {
     return (
       <div
-        className={`flex items-center justify-center font-cond text-lg tracking-[0.1em]
-          text-pizarra-marco ${marco}`}
+        className={`flex items-center px-8 font-cond text-pizarra-marco ${marco}`}
         style={{
           background: 'repeating-linear-gradient(45deg,#1c1c22,#1c1c22 10px,#16161b 10px,#16161b 20px)',
         }}
       >
-        [ ESPACIO PATROCINANTE ]
+        {/* Las letras se reparten de borde a borde —`inter-character` estira
+            entre cada una, no sólo en los espacios— para que el cartel ocupe
+            toda la franja y se lea como parte del diseño y no como un hueco. */}
+        <span
+          className="text-[44px]"
+          style={{
+            width: '100%',
+            textAlign: 'justify',
+            textAlignLast: 'justify',
+            textJustify: 'inter-character',
+          }}
+        >
+          ESPACIO PATROCINANTE
+        </span>
       </div>
     );
   }
@@ -735,10 +747,12 @@ function Escalada({ children }: { children: ReactNode }) {
       try { localStorage.setItem(CLAVE_CALIBRACION, JSON.stringify(nueva)); } catch { /* sin persistir */ }
 
       // El cartel sólo aparece mientras se calibra: la pizarra es pantalla de
-      // público y un indicador permanente sería ruido en el salón.
+      // público y un indicador permanente sería ruido en el salón. Cinco
+      // segundos después de la última tecla se va solo —tiempo de sobra para
+      // leer cómo quedó el ajuste—.
       setAjustando(true);
       clearTimeout(ocultar);
-      ocultar = setTimeout(() => setAjustando(false), 2500);
+      ocultar = setTimeout(() => setAjustando(false), 5000);
     };
 
     window.addEventListener('keydown', alTeclear);
