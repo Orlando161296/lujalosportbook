@@ -119,11 +119,13 @@ export function Tablero() {
   // mismo orden en que escucha, sin retener el número en la cabeza.
   const refNumero = useRef<HTMLInputElement>(null);
   const refJugador = useRef<HTMLInputElement>(null);
-  // El operador tocó una celda para arreglarla: es una parada deliberada,
-  // así que al guardar NO se sigue el recorrido —vuelve al alta en blanco—.
-  // El resto de las altas sí encadenan al casillero siguiente.
-  const vinoDeClick = useRef(false);
   const refMonto = useRef<HTMLInputElement>(null);
+
+  // El operador tocó una celda que YA tenía puja: es una corrección puntual,
+  // así que al guardar NO se sigue el recorrido —vuelve al alta en blanco—.
+  // Elegir una celda vacía (o teclear el número) sí encadena al casillero
+  // siguiente.
+  const correccionTocada = useRef(false);
 
   // Alt+1/2/3 cambia de tabla sin soltar el teclado. Alt y no F1-F3 porque
   // F3 ya está anunciado para reimprimir el último ticket, y no sueltos
@@ -253,10 +255,10 @@ export function Tablero() {
       // consulta se refresque, toda jugada parece preexistente y el aviso no
       // podría distinguir una corrección de un alta.
       const corregida = editando;
-      // `tablaIdx` y `vinoDeClick` viajan en el resultado —y no se leen en
+      // `tablaIdx` y `correccionTocada` viajan en el resultado —y no se leen en
       // onSuccess— porque ahí podrían ser otros: el operador pudo tocar
       // alt+2, o una celda, mientras se guardaba.
-      const paradaDeliberada = vinoDeClick.current;
+      const paradaDeliberada = correccionTocada.current;
       await api.jugadas.registrar(tabla.id, ejemplar.id, { clienteId, apodo, esCasa, monto: valor, moneda });
       return { nombre, valor, ejemplar, etiqueta: tabla.etiqueta, corregida, tablaIdx, paradaDeliberada };
     },
@@ -363,20 +365,21 @@ export function Tablero() {
     // asignada. La tabla NO se toca — se sigue cargando en la misma hasta que
     // el operador la cambie con alt+1/2/3.
     setEsCasa(false);
-    vinoDeClick.current = false;
+    correccionTocada.current = false;
     refNumero.current?.focus();
   };
 
   /**
    * Deja el formulario listo en el casillero siguiente al que se acaba de
-   * cargar. El número queda precargado y SELECCIONADO: si el rematador saltó
-   * de caballo, la primera tecla lo reemplaza entero.
+   * cargar. El número ya viene puesto —de eso se trata—, así que el foco va
+   * directo al monto: el operador sólo teclea la cifra y el nombre. Si el
+   * rematador salta de caballo, Escape vuelve al N° con el valor marcado.
    */
   const avanzarAlSiguiente = (numeroCargado: number, idxUsada: number) => {
     setMonto('');
     setJugador('');
     setEsCasa(false);
-    vinoDeClick.current = false;
+    correccionTocada.current = false;
 
     const sig = carrera ? siguienteCasillero(carrera, idxUsada, numeroCargado) : null;
     if (sig) {
@@ -387,10 +390,16 @@ export function Tablero() {
       setNumero('');
     }
 
-    requestAnimationFrame(() => {
+    // Foco directo, como `limpiarFormulario` —sin requestAnimationFrame—: no
+    // hay valor que seleccionar (el monto queda vacío) y la rAF no dispara
+    // con la ventana en segundo plano, que es cuando el operador acaba de
+    // alt-tabear a la pizarra.
+    if (sig) {
+      refMonto.current?.focus();
+    } else {
+      // Se acabó el recorrido: foco al N° para empezar una carga nueva.
       refNumero.current?.focus();
-      refNumero.current?.select();
-    });
+    }
   };
 
   return (
@@ -432,7 +441,7 @@ export function Tablero() {
                   setNumero(e.target.value);
                   // Si el operador teclea el número a mano deja de ser la
                   // corrección puntual de una celda: vuelve a encadenar.
-                  vinoDeClick.current = false;
+                  correccionTocada.current = false;
                 }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter') return;
@@ -694,9 +703,6 @@ export function Tablero() {
           onPote={(tablaId, valor) => guardarPote.mutate({ tablaId, valor })}
           onElegir={(n, idx) => {
             setNumero(String(n));
-            // Tocar una celda es una parada deliberada: al guardar se vuelve
-            // al alta en blanco en vez de seguir el recorrido.
-            vinoDeClick.current = true;
             // Tocar una celda de T2 elige el caballo Y la tabla: es el gesto
             // completo.
             if (idx != null) setTablaIdx(idx);
@@ -715,6 +721,12 @@ export function Tablero() {
             const tabla = idx != null ? carrera.tablas[idx] : carrera.tablas[tablaIdx];
             const ej = carrera.ejemplares.find((e) => e.numero === n);
             const previa = tabla && ej ? jugadaDe.get(`${tabla.id}:${ej.id}`) : undefined;
+
+            // Tocar una celda que YA tiene puja es una corrección puntual: al
+            // guardar se vuelve al alta en blanco. Tocar una celda vacía es
+            // elegir por dónde empezar —o seguir— el recorrido, así que ahí
+            // el recorrido arranca igual que si el número se hubiera tecleado.
+            correccionTocada.current = previa != null;
 
             setMonto(previa ? montoParaEditar(previa.monto) : '');
             setJugador(previa?.postor ?? '');
