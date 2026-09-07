@@ -223,7 +223,9 @@ export function PizarraApp() {
         className="grid min-h-0 flex-1 gap-x-3"
         style={{
           gridTemplateColumns: `1.5fr repeat(${carrera.tablas.length}, 1fr)`,
-          gridTemplateRows: '38px 34px 1fr 62px',
+          // La última fila (POTE CASA / A REPARTIR) va más alta que antes: el
+          // «a repartir» es el número que el público mira y a 24 px se perdía.
+          gridTemplateRows: '38px 34px 1fr 88px',
         }}
       >
         <div className={`col-start-1 row-start-1 flex items-center justify-center
@@ -360,17 +362,22 @@ export function PizarraApp() {
                   recuadro de al lado y daba una cifra que no existe. Queda lo
                   que se paga y el pote, que es de dónde sale. */}
               <div
-                className="row-start-4 grid grid-cols-[1fr_1.15fr] gap-1.5 pt-2"
+                className="row-start-4 grid grid-cols-[1fr_1.2fr] gap-1.5 pt-2"
                 style={{ gridColumnStart: col }}
               >
-                <Caja fondo="#fff" titulo="POTE CASA" chico>
-                  <span className="plata text-[22px] font-bold text-[#2a2a2a]">{bs(tot?.pote ?? 0)}</span>
+                <Caja fondo="#fff" titulo="POTE CASA" tituloColor="#2a2a2a" chico>
+                  <span className="plata block max-w-full overflow-hidden text-[30px]
+                    font-bold leading-none text-[#2a2a2a]">
+                    {bs(tot?.pote ?? 0)}
+                  </span>
                 </Caja>
                 {/* A REPARTIR es lo que el ganador de esta tabla cobra de una
                     vez: bolsa menos el 30% de la casa. Los tres recuadros de
-                    las tablas suman el total del pie. */}
-                <Caja fondo="#1C1C22" titulo="A REPARTIR" chico>
-                  <span className="plata text-2xl font-bold text-pizarra-amarillo">
+                    las tablas suman el total del pie. Va en grande: es el
+                    número que el público sigue durante el remate. */}
+                <Caja fondo="#1C1C22" titulo="A REPARTIR" tituloColor="#f0c8e6" chico>
+                  <span className="plata block max-w-full overflow-hidden text-[42px]
+                    font-bold leading-none text-pizarra-amarillo">
                     {bs(tot?.alGanador ?? 0)}
                   </span>
                 </Caja>
@@ -438,8 +445,8 @@ function Caja({
       style={{ background: fondo, border: `2px solid ${borde}` }}
     >
       <span
-        className={`font-cond tracking-[0.12em] ${chico ? 'text-sm tracking-[0.08em]' : 'text-base'}`}
-        style={{ color: chico ? '#2a2a2a' : tituloColor }}
+        className={`font-cond tracking-[0.12em] ${chico ? 'text-[17px] tracking-[0.08em]' : 'text-base'}`}
+        style={{ color: tituloColor }}
       >
         {titulo}
       </span>
