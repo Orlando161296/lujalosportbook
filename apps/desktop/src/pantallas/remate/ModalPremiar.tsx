@@ -8,12 +8,16 @@ import { Boton, Casilla, Gualdrapa } from '../../ui';
 import { avisar } from '../../ui/avisos';
 
 /**
- * Premiar es el único momento irreversible de la app: marca el ganador y
- * cierra la carrera. Por eso es un modal sobre el tablero y no una pantalla
- * aparte — al operador no le tiene que quedar fácil llegar por accidente.
+ * Premiar marca el ganador de la carrera y calcula el reparto. Es un modal
+ * sobre el tablero y no una pantalla aparte — al operador no le tiene que
+ * quedar fácil llegar por accidente.
  *
  * Las tres tablas comparten UN ganador porque el resultado de la carrera es
  * un hecho físico único; lo que cambia por tabla es cuánto se paga.
+ *
+ * Ya no es irreversible: si se premió el caballo equivocado, se reabre este
+ * modal para cambiar la marca —el guardado reemplaza el resultado, no lo
+ * suma— o se usa «Deshacer premiación» para dejar la carrera sin ganador.
  */
 export function ModalPremiar({
   carrera, totales, porNumero, onCerrar,
@@ -24,6 +28,7 @@ export function ModalPremiar({
   onCerrar: () => void;
 }) {
   const qc = useQueryClient();
+  const yaPremiada = carrera.ganadores.length > 0;
   const [elegidos, setElegidos] = useState<number[]>(
     carrera.ganadores.map((g) => g.ejemplarId),
   );
@@ -37,12 +42,26 @@ export function ModalPremiar({
       qc.invalidateQueries({ queryKey: claveCarrera(carrera.id) });
       qc.invalidateQueries({ queryKey: ['cobros', carrera.id] });
       avisar.exito(
-        `Carrera ${carrera.numero} premiada`,
+        yaPremiada ? `Carrera ${carrera.numero}: ganador corregido` : `Carrera ${carrera.numero} premiada`,
         `${res.ganadores.map((g) => `${g.numero} ${g.nombre}`).join(', ')} · ${res.pagos.length} pagos`,
       );
       onCerrar();
     },
     onError: (e) => setError(e instanceof Error ? e.message : 'No se pudo registrar el resultado.'),
+  });
+
+  const deshacer = useMutation({
+    mutationFn: () => api.carreras.deshacerResultado(carrera.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: claveCarrera(carrera.id) });
+      qc.invalidateQueries({ queryKey: ['cobros', carrera.id] });
+      avisar.info(
+        `Carrera ${carrera.numero} sin ganador`,
+        'Se borró el resultado. Volvé a premiar cuando esté el caballo correcto.',
+      );
+      onCerrar();
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : 'No se pudo deshacer el resultado.'),
   });
 
   const activos = carrera.ejemplares.filter((e) => e.estado === 'activo');
@@ -103,10 +122,17 @@ export function ModalPremiar({
       <div className="tarjeta max-h-[92vh] w-[860px] max-w-full overflow-y-auto border-0 shadow-2xl barra-scroll">
         <header className="flex items-center justify-between bg-carbon px-4 py-3">
           <h2 id="titulo-premiar" className="font-display text-[19px] text-hueso">
-            PREMIAR GANADOR · CARRERA {carrera.numero}
+            {yaPremiada ? 'CORREGIR GANADOR' : 'PREMIAR GANADOR'} · CARRERA {carrera.numero}
           </h2>
           <button type="button" onClick={onCerrar} aria-label="Cerrar" className="text-lg text-gris">✕</button>
         </header>
+
+        {yaPremiada && (
+          <p className="border-b border-amarillo/40 bg-amarillo/10 px-4 py-2 text-[13px] text-tinta">
+            Esta carrera <b>ya tiene ganador</b>. Cambiá la marca y guardá para reemplazarlo,
+            o usá <b>Deshacer premiación</b> para dejarla sin ganador. Los cobros no cambian.
+          </p>
+        )}
 
         <div className="border-b border-borde bg-verde/10 px-4 py-3">
           <p className="etiqueta mb-2">Marcá el ejemplar que ganó</p>
@@ -278,14 +304,30 @@ export function ModalPremiar({
             Mostrar el ganador en la pizarra
           </Casilla>
           <div className="flex-1" />
+          {yaPremiada && (
+            <Boton
+              tono="destructivo"
+              disabled={deshacer.isPending || confirmar.isPending}
+              onClick={() => {
+                if (confirm(
+                  `¿Dejar la carrera ${carrera.numero} SIN ganador? Se borra el resultado. `
+                  + 'Los cobros de los postores no se tocan.',
+                )) deshacer.mutate();
+              }}
+            >
+              {deshacer.isPending ? 'Deshaciendo…' : 'Deshacer premiación'}
+            </Boton>
+          )}
           <Boton onClick={onCerrar}>Cancelar</Boton>
           <Boton
             tono="confirmar"
             className="px-4 py-2.5 text-[15px]"
-            disabled={elegidos.length === 0 || confirmar.isPending}
+            disabled={elegidos.length === 0 || confirmar.isPending || deshacer.isPending}
             onClick={() => confirmar.mutate()}
           >
-            {confirmar.isPending ? 'Confirmando…' : 'Confirmar premiación y cerrar carrera'}
+            {confirmar.isPending
+              ? 'Guardando…'
+              : yaPremiada ? 'Guardar corrección del ganador' : 'Confirmar premiación'}
           </Boton>
         </footer>
       </div>

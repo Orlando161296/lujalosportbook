@@ -40,7 +40,8 @@ export function useCarrera(carreraId: number | null) {
       EVENTOS.jugadaActualizada, EVENTOS.jugadaAnulada,
       EVENTOS.ejemplarRetirado, EVENTOS.ejemplarRepuesto,
       EVENTOS.tablaPoteActualizado, EVENTOS.tablaCerrada,
-      EVENTOS.carreraGanadorAnunciado, EVENTOS.carreraEstadoCambiado,
+      EVENTOS.carreraGanadorAnunciado, EVENTOS.carreraResultadoDeshecho,
+      EVENTOS.carreraEstadoCambiado,
       EVENTOS.tasaActualizada, EVENTOS.cobroMarcadoPagado,
     ];
     eventos.forEach((e) => socket.on(e, refrescar));

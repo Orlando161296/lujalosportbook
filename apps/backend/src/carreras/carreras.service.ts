@@ -83,6 +83,15 @@ export class CarrerasService {
       throw new BadRequestException('Algún ejemplar ganador no existe en esta carrera');
     }
 
+    // Reemplaza el resultado, no lo suma. Antes sólo hacía upsert de los que
+    // llegaban: si se premiaba el 5 por error y después se mandaba el 3, la
+    // carrera quedaba con los dos ganadores y el reparto salía partido a la
+    // mitad. Ahora los que no vienen en la lista se borran, así reabrir
+    // «Premiar» y cambiar la marca corrige de verdad.
+    await this.prisma.carreraGanador.deleteMany({
+      where: { carreraId, ejemplarId: { notIn: dto.ejemplaresGanadores } },
+    });
+
     // SQLite no soporta `skipDuplicates` en createMany (Prisma lo tipa como
     // `never` con este connector), así que se hace upsert sobre la PK
     // compuesta — mismo efecto idempotente si se reenvía el resultado.
@@ -142,5 +151,23 @@ export class CarrerasService {
     });
 
     return { ganadores: ejemplaresGanadores, pagos };
+  }
+
+  /**
+   * Deja la carrera sin ganador: se premió el caballo equivocado y no hay
+   * uno para poner en su lugar todavía.
+   *
+   * No toca las tablas ni los cobros —lo que cada postor paga por su jugada
+   * no depende de quién ganó, así que el cobro sigue igual—: sólo borra el
+   * resultado y avisa a la pizarra para que vuelva a «carrera en remate».
+   */
+  async deshacerResultado(carreraId: number) {
+    const carrera = await this.prisma.carrera.findUnique({ where: { id: carreraId } });
+    if (!carrera) throw new NotFoundException('Carrera no encontrada');
+
+    const { count } = await this.prisma.carreraGanador.deleteMany({ where: { carreraId } });
+    if (count > 0) this.events.carreraResultadoDeshecho(carreraId);
+
+    return { deshechos: count };
   }
 }

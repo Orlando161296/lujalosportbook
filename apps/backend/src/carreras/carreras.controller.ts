@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { CarrerasService } from './carreras.service';
 import { CrearCarreraDto, CambiarEstadoCarreraDto, RegistrarResultadoDto } from './dto';
 import { CurrentUser } from '../common/current-user.decorator';
@@ -30,5 +30,11 @@ export class CarrerasController {
   @Post(':id/resultado')
   registrarResultado(@Param('id', ParseIntPipe) id: number, @Body() dto: RegistrarResultadoDto) {
     return this.carreras.registrarResultado(id, dto);
+  }
+
+  /** Borra el resultado: se premió mal y la carrera vuelve a quedar sin ganador. */
+  @Delete(':id/resultado')
+  deshacerResultado(@Param('id', ParseIntPipe) id: number) {
+    return this.carreras.deshacerResultado(id);
   }
 }

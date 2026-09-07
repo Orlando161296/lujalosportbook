@@ -91,6 +91,12 @@ export class EventsGateway {
     this.server.to(roomCarrera(carreraId)).emit('carrera:estado_cambiado', { carreraId, ...payload });
   }
 
+  // Se borró el resultado: se había premiado el caballo equivocado. La
+  // pizarra tiene que sacar el cartel de ganador y volver a «en remate».
+  carreraResultadoDeshecho(carreraId: number) {
+    this.server.to(roomCarrera(carreraId)).emit('carrera:resultado_deshecho', { carreraId });
+  }
+
   // Va a TODOS los clientes, no a la room de una carrera: justamente
   // anuncia de qué carrera hay que empezar a hablar, así que la ventana de
   // la pizarra todavía no está suscrita a la nueva.

@@ -160,6 +160,8 @@ export const api = {
       patch<Carrera>(`/carreras/${id}/estado`, { estado }),
     registrarResultado: (id: number, ejemplaresGanadores: number[]) =>
       post<ResultadoCarrera>(`/carreras/${id}/resultado`, { ejemplaresGanadores }),
+    /** Borra el resultado: se premió mal y la carrera vuelve a quedar sin ganador. */
+    deshacerResultado: (id: number) => del<{ deshechos: number }>(`/carreras/${id}/resultado`),
   },
 
   tablas: {

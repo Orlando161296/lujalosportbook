@@ -35,6 +35,7 @@ export const EVENTOS = {
   tablaPoteActualizado: 'tabla:pote_actualizado',
   tablaCerrada: 'tabla:cerrada',
   carreraGanadorAnunciado: 'carrera:ganador_anunciado',
+  carreraResultadoDeshecho: 'carrera:resultado_deshecho',
   carreraEstadoCambiado: 'carrera:estado_cambiado',
   tasaActualizada: 'tasa:actualizada',
   cobroMarcadoPagado: 'cobro:marcado_pagado',
