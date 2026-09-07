@@ -25,11 +25,17 @@ export const Autocompletar = forwardRef<HTMLInputElement, {
   sugerencias: SugerenciaAuto[];
   /** Enter sin sugerencia marcada: seguir la secuencia de carga. */
   onConfirmar: () => void;
+  /**
+   * Escape con la lista ya cerrada. La primera pulsación cierra las
+   * sugerencias; la segunda —o la primera si no había lista abierta— la
+   * maneja el llamador, que en el remate la usa para retroceder un campo.
+   */
+  onEscape?: () => void;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
 }>(function Autocompletar(
-  { valor, onCambio, sugerencias, onConfirmar, placeholder, disabled, className = '' },
+  { valor, onCambio, sugerencias, onConfirmar, onEscape, placeholder, disabled, className = '' },
   ref,
 ) {
   const [abierto, setAbierto] = useState(false);
@@ -90,8 +96,13 @@ export const Autocompletar = forwardRef<HTMLInputElement, {
             return;
           }
           if (e.key === 'Escape') {
-            setAbierto(false);
-            setMarcado(-1);
+            if (mostrar) {
+              // Hay lista abierta: Escape sólo la cierra.
+              setAbierto(false);
+              setMarcado(-1);
+            } else {
+              onEscape?.();
+            }
             return;
           }
           if (e.key === 'Enter') {

@@ -4,7 +4,7 @@ import { api, ErrorApi } from '../../lib/api';
 import { bs, formatearMientrasEscribe, parsearMonto, usd } from '../../lib/formato';
 import { useNavegacion, useSesion } from '../../lib/estado';
 import { claveCarrera, totalesDeTabla, useCarrera } from '../../hooks/useCarrera';
-import type { Cliente, ColorNumero, Ejemplar, Moneda } from '../../lib/tipos';
+import type { Cliente, ColorNumero, Ejemplar, Moneda, Pizarra } from '../../lib/tipos';
 import {
   Boton, Campo, Cargando, Entrada, Etiqueta, Gualdrapa, Panel, Pildora, Problema, Segmentado, Vacio,
 } from '../../ui';
@@ -55,6 +55,38 @@ function montoParaEditar(crudo: string): string {
 }
 
 
+/**
+ * A qué casillero salta el formulario después de cargar una jugada.
+ *
+ * El rematador canta la tabla entera de arriba abajo y recién ahí pasa a la
+ * siguiente, así que la carga sigue ese recorrido: baja por los ejemplares de
+ * la tabla actual y, al pasar el último, arranca la tabla que sigue por su
+ * primer caballo. Después del último caballo de la última tabla no salta más
+ * —el operador ya recorrió todo y lo que venga es una corrección puntual.
+ *
+ * Sólo cuenta los ejemplares en carrera: un retirado no se puede pujar, así
+ * que saltearlo es lo correcto.
+ */
+function siguienteCasillero(
+  carrera: Pizarra,
+  tablaIdx: number,
+  numeroActual: number,
+): { tablaIdx: number; numero: number } | null {
+  const enCarrera = carrera.ejemplares
+    .filter((e) => e.estado !== 'retirado')
+    .sort((a, b) => a.numero - b.numero);
+  if (enCarrera.length === 0) return null;
+
+  const siguiente = enCarrera.find((e) => e.numero > numeroActual);
+  if (siguiente) return { tablaIdx, numero: siguiente.numero };
+
+  if (tablaIdx + 1 < carrera.tablas.length) {
+    return { tablaIdx: tablaIdx + 1, numero: enCarrera[0].numero };
+  }
+  return null;
+}
+
+
 export function Tablero() {
   const carreraId = useNavegacion((s) => s.carreraId);
   const { usuario } = useSesion();
@@ -87,6 +119,10 @@ export function Tablero() {
   // mismo orden en que escucha, sin retener el número en la cabeza.
   const refNumero = useRef<HTMLInputElement>(null);
   const refJugador = useRef<HTMLInputElement>(null);
+  // El operador tocó una celda para arreglarla: es una parada deliberada,
+  // así que al guardar NO se sigue el recorrido —vuelve al alta en blanco—.
+  // El resto de las altas sí encadenan al casillero siguiente.
+  const vinoDeClick = useRef(false);
   const refMonto = useRef<HTMLInputElement>(null);
 
   // Alt+1/2/3 cambia de tabla sin soltar el teclado. Alt y no F1-F3 porque
@@ -217,18 +253,28 @@ export function Tablero() {
       // consulta se refresque, toda jugada parece preexistente y el aviso no
       // podría distinguir una corrección de un alta.
       const corregida = editando;
+      // `tablaIdx` y `vinoDeClick` viajan en el resultado —y no se leen en
+      // onSuccess— porque ahí podrían ser otros: el operador pudo tocar
+      // alt+2, o una celda, mientras se guardaba.
+      const paradaDeliberada = vinoDeClick.current;
       await api.jugadas.registrar(tabla.id, ejemplar.id, { clienteId, apodo, esCasa, monto: valor, moneda });
-      return { nombre, valor, ejemplar, etiqueta: tabla.etiqueta, corregida };
+      return { nombre, valor, ejemplar, etiqueta: tabla.etiqueta, corregida, tablaIdx, paradaDeliberada };
     },
-    onSuccess: ({ nombre, valor, ejemplar, etiqueta, corregida }) => {
+    onSuccess: ({ nombre, valor, ejemplar, etiqueta, corregida, tablaIdx: idxUsada, paradaDeliberada }) => {
       if (carreraId) qc.invalidateQueries({ queryKey: claveCarrera(carreraId) });
       avisar.exito(
         `${corregida ? 'Corregido · ' : ''}${ejemplar.numero} ${ejemplar.nombre} · ${bs(valor)} ${moneda}`,
         `${nombre} · tabla ${etiqueta}`,
       );
-      // Formulario en blanco y foco al principio de la secuencia, listo para
-      // el siguiente caballo sin tocar el mouse.
-      limpiarFormulario();
+      // Si el operador vino a arreglar una celda que tocó a propósito, se
+      // vuelve al alta en blanco. En cualquier otro caso —incluido pisar una
+      // puja mientras se recorre la tabla— se encadena al casillero
+      // siguiente: el rematador canta la tabla entera de corrido.
+      if (paradaDeliberada) {
+        limpiarFormulario();
+      } else {
+        avanzarAlSiguiente(ejemplar.numero, idxUsada);
+      }
     },
     onError: (e) => avisar.error(
       'No se registró la jugada',
@@ -317,7 +363,34 @@ export function Tablero() {
     // asignada. La tabla NO se toca — se sigue cargando en la misma hasta que
     // el operador la cambie con alt+1/2/3.
     setEsCasa(false);
+    vinoDeClick.current = false;
     refNumero.current?.focus();
+  };
+
+  /**
+   * Deja el formulario listo en el casillero siguiente al que se acaba de
+   * cargar. El número queda precargado y SELECCIONADO: si el rematador saltó
+   * de caballo, la primera tecla lo reemplaza entero.
+   */
+  const avanzarAlSiguiente = (numeroCargado: number, idxUsada: number) => {
+    setMonto('');
+    setJugador('');
+    setEsCasa(false);
+    vinoDeClick.current = false;
+
+    const sig = carrera ? siguienteCasillero(carrera, idxUsada, numeroCargado) : null;
+    if (sig) {
+      setNumero(String(sig.numero));
+      setTablaIdx(sig.tablaIdx);
+    } else {
+      // Última tabla, último caballo: el recorrido terminó. Queda en blanco.
+      setNumero('');
+    }
+
+    requestAnimationFrame(() => {
+      refNumero.current?.focus();
+      refNumero.current?.select();
+    });
   };
 
   return (
@@ -355,7 +428,12 @@ export function Tablero() {
                 ref={refNumero}
                 inputMode="numeric"
                 value={numero}
-                onChange={(e) => setNumero(e.target.value)}
+                onChange={(e) => {
+                  setNumero(e.target.value);
+                  // Si el operador teclea el número a mano deja de ser la
+                  // corrección puntual de una celda: vuelve a encadenar.
+                  vinoDeClick.current = false;
+                }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter') return;
                   refMonto.current?.focus();
@@ -422,6 +500,15 @@ export function Tablero() {
                 requestAnimationFrame(() => campo.setSelectionRange(r.cursor, r.cursor));
               }}
               onKeyDown={(e) => {
+                // Escape retrocede un campo: vuelve al N° con el valor
+                // marcado. Es el «volver atrás» del remate —«era 5000 y no
+                // 3000»— sin borrar nada ni tocar el mouse.
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  refNumero.current?.focus();
+                  refNumero.current?.select();
+                  return;
+                }
                 // El punto es separador de miles y lo pone el formateador
                 // solo; el decimal es la coma. Pero en el teclado numérico
                 // la tecla que cae a mano es el punto, así que se traduce
@@ -467,6 +554,11 @@ export function Tablero() {
                 // Último campo de la cadena: Enter sin sugerencia marcada ya
                 // no pasa a otro campo, graba la jugada.
                 onConfirmar={() => registrar.mutate()}
+                // Escape retrocede al Monto con el valor marcado.
+                onEscape={() => {
+                  refMonto.current?.focus();
+                  refMonto.current?.select();
+                }}
               />
               <button
                 type="button"
@@ -550,21 +642,26 @@ export function Tablero() {
               Todavía sin resultado. Se marca al confirmar la premiación.
             </p>
           ) : (
-            [...ganadores].map((id) => {
-              const e = carrera.ejemplares.find((x) => x.id === id);
-              const c = e && porNumero.get(e.numero);
-              return e ? (
-                <div key={id} className="flex items-center gap-3">
-                  <Gualdrapa
-                    numero={e.numero}
-                    color={c?.colorHex ?? '#F58220'}
-                    texto={c?.textoHex ?? '#111'}
-                    tam={38}
-                  />
-                  <span className="flex-1 truncate font-display text-lg">{e.nombre}</span>
-                </div>
-              ) : null;
-            })
+            <>
+              {[...ganadores].map((id) => {
+                const e = carrera.ejemplares.find((x) => x.id === id);
+                const c = e && porNumero.get(e.numero);
+                return e ? (
+                  <div key={id} className="flex items-center gap-3">
+                    <Gualdrapa
+                      numero={e.numero}
+                      color={c?.colorHex ?? '#F58220'}
+                      texto={c?.textoHex ?? '#111'}
+                      tam={38}
+                    />
+                    <span className="flex-1 truncate font-display text-lg">{e.nombre}</span>
+                  </div>
+                ) : null;
+              })}
+              <p className="text-[12px] leading-snug text-gris">
+                ¿Se premió mal? «Cambiar ganador…» reemplaza el caballo o borra el resultado.
+              </p>
+            </>
           )}
           <Boton
             tono="confirmar"
@@ -580,7 +677,7 @@ export function Tablero() {
               : undefined}
             onClick={() => setPremiando(true)}
           >
-            Premiar ganador…
+            {ganadores.size > 0 ? 'Cambiar ganador…' : 'Premiar ganador…'}
           </Boton>
         </Panel>
       </div>
@@ -597,6 +694,9 @@ export function Tablero() {
           onPote={(tablaId, valor) => guardarPote.mutate({ tablaId, valor })}
           onElegir={(n, idx) => {
             setNumero(String(n));
+            // Tocar una celda es una parada deliberada: al guardar se vuelve
+            // al alta en blanco en vez de seguir el recorrido.
+            vinoDeClick.current = true;
             // Tocar una celda de T2 elige el caballo Y la tabla: es el gesto
             // completo.
             if (idx != null) setTablaIdx(idx);
