@@ -107,6 +107,23 @@ export function PizarraApp() {
   const totalCarreras = 6;
   const marco = 'border-2 border-pizarra-marco';
 
+  /**
+   * El cuerpo del tablero se lee desde el fondo del salón, así que el texto
+   * tiene que llenar la fila. La franja de ejemplares mide ~656 px y se
+   * reparte entre todos: con pocos caballos las filas son altas y una
+   * tipografía fija se veía diminuta al lado del recuadro. Se calcula contra
+   * el alto de fila y se acota para que ni desborde (muchos caballos) ni se
+   * pase de grande (una carrera de cinco).
+   *
+   * El monto va un punto más chico y con su propio tope: un número de siete
+   * cifras en una tipografía de 44 px se sale de la columna, y en el TV un
+   * monto cortado es un monto equivocado.
+   */
+  const altoFila = 656 / Math.max(carrera.ejemplares.length, 1);
+  const fuenteFila = Math.round(Math.min(50, Math.max(26, altoFila * 0.62)));
+  const fuenteMonto = Math.min(fuenteFila, 38);
+  const fuenteNumero = Math.min(fuenteFila, 38);
+
   return (
     <>
     <PistaCerrar />
@@ -224,8 +241,9 @@ export function PizarraApp() {
                 }}
               >
                 <div
-                  className="flex items-center justify-center border-r border-[#9a9a9a] font-display text-[25px]"
+                  className="flex items-center justify-center border-r border-[#9a9a9a] font-display"
                   style={{
+                    fontSize: fuenteNumero,
                     background: retirado ? '#cfc9b4' : (c?.colorHex ?? '#F58220'),
                     color: retirado ? '#7a7770' : (c?.textoHex ?? '#111'),
                     boxShadow: c?.colorHex.toUpperCase() === '#FFFFFF'
@@ -235,8 +253,9 @@ export function PizarraApp() {
                   {e.numero}
                 </div>
                 <div
-                  className="flex items-center overflow-hidden text-ellipsis whitespace-nowrap px-3 text-[26px]"
+                  className="flex items-center overflow-hidden text-ellipsis whitespace-nowrap px-3"
                   style={{
+                    fontSize: fuenteFila,
                     fontWeight: gana ? 700 : 400,
                     color: retirado ? '#6b665e' : '#1a1a1a',
                     textDecoration: retirado ? 'line-through' : undefined,
@@ -297,8 +316,9 @@ export function PizarraApp() {
                       style={{ background: retirado ? '#f2e2ee' : undefined }}
                     >
                       <div
-                        className="plata border-r border-[#cfc9b4] text-[25px]"
+                        className="plata overflow-hidden border-r border-[#cfc9b4]"
                         style={{
+                          fontSize: fuenteMonto,
                           fontWeight: gana ? 700 : 400,
                           color: retirado ? '#8a857c' : casa ? '#8f2f7c' : '#1a1a1a',
                           textDecoration: retirado ? 'line-through' : undefined,
@@ -307,8 +327,9 @@ export function PizarraApp() {
                         {retirado ? '—' : j ? bs(j.monto) : '—'}
                       </div>
                       <div
-                        className="overflow-hidden text-ellipsis whitespace-nowrap px-2 text-[22px]"
+                        className="overflow-hidden text-ellipsis whitespace-nowrap px-2"
                         style={{
+                          fontSize: fuenteFila,
                           fontWeight: gana ? 700 : 400,
                           color: retirado ? '#8a857c' : casa ? '#8f2f7c' : j ? '#1a1a1a' : '#b9b3a8',
                         }}
