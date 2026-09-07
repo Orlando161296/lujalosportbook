@@ -267,7 +267,7 @@ export function PizarraApp() {
                   className="flex items-center overflow-hidden text-ellipsis whitespace-nowrap px-3"
                   style={{
                     fontSize: fuenteNombre,
-                    fontWeight: gana ? 700 : 400,
+                    fontWeight: 700,
                     color: retirado ? '#6b665e' : '#1a1a1a',
                     textDecoration: retirado ? 'line-through' : undefined,
                     textDecorationColor: '#8f2f7c',
@@ -330,7 +330,7 @@ export function PizarraApp() {
                         className="plata overflow-hidden border-r border-[#cfc9b4]"
                         style={{
                           fontSize: fuenteTabla,
-                          fontWeight: gana ? 700 : 400,
+                          fontWeight: 700,
                           color: retirado ? '#8a857c' : casa ? '#8f2f7c' : '#1a1a1a',
                           textDecoration: retirado ? 'line-through' : undefined,
                         }}
@@ -341,7 +341,7 @@ export function PizarraApp() {
                         className="overflow-hidden text-ellipsis whitespace-nowrap px-2"
                         style={{
                           fontSize: fuenteTabla,
-                          fontWeight: gana ? 700 : 400,
+                          fontWeight: j && !retirado ? 700 : 400,
                           color: retirado ? '#8a857c' : casa ? '#8f2f7c' : j ? '#1a1a1a' : '#b9b3a8',
                         }}
                       >
