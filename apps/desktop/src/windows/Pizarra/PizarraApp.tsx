@@ -513,79 +513,6 @@ const MARGEN_SEGURO = 0.96;
 const CINTILLO_PX_POR_SEGUNDO = 90;
 
 /**
- * El cartel de «ESPACIO PATROCINANTE» cuando todavía no hay ninguno cargado.
- *
- * Tiene que verse GRANDE —pegado arriba y abajo de la franja— para que el
- * lugar del patrocinante se lea como parte del diseño y no como un hueco. La
- * franja es de tamaño fijo en coordenadas de diseño (1116 × 112), así que se
- * mide una sola vez:
- *  · la fuente crece hasta el mayor tamaño que entra a lo ancho SIN deformar
- *    las letras;
- *  · y de ahí un `scaleY` las estira en vertical hasta tocar los dos bordes
- *    —estirar en alto se lee bien (cartelería), aplastar en ancho no—.
- */
-function CartelPatrocinante({ marco }: { marco: string }) {
-  const cajaRef = useRef<HTMLDivElement>(null);
-  const textoRef = useRef<HTMLSpanElement>(null);
-  const [ajuste, setAjuste] = useState({ size: 80, scaleY: 1 });
-
-  useLayoutEffect(() => {
-    const medir = () => {
-      const caja = cajaRef.current;
-      const texto = textoRef.current;
-      if (!caja || !texto) return;
-      // El tamaño real que hay puesto ahora mismo —así `medir` se puede
-      // repetir y converge—: se parte de ahí para el reajuste.
-      const sizeActual = parseFloat(getComputedStyle(texto).fontSize) || 1;
-      // `clientHeight` no lo toca el transform de Escalada; para el ancho se
-      // usan rects y su cociente, que tampoco depende de la escala. El
-      // `scaleY` no cambia el ancho, así que la medida sirve igual.
-      const alto = caja.clientHeight;
-      const anchoTexto = texto.getBoundingClientRect().width;
-      const anchoCaja = caja.getBoundingClientRect().width;
-      if (anchoTexto < 1 || anchoCaja < 1) return;
-
-      // El mayor tamaño que llena el ancho sin deformar las letras…
-      const size = Math.max(24, Math.round(Math.min(
-        150,
-        sizeActual * (anchoCaja * 0.98) / anchoTexto,
-      )));
-      // …y de ahí un estirón vertical para pegar arriba y abajo. Tope en 1,35:
-      // más que eso las letras se leen deformadas en vez de sólo altas.
-      // (Mayúsculas ≈ 0,71 del em en Barlow Condensed.)
-      const scaleY = Math.min(1.35, Math.max(1, (alto - 4) / (size * 0.71)));
-      setAjuste((a) => (a.size === size && a.scaleY === scaleY ? a : { size, scaleY }));
-    };
-
-    medir();
-    // La tipografía carga con `font-display: block`: hasta que llega, el
-    // ancho se mide contra la de respaldo y queda mal. Se rehace cuando está.
-    let raf = 0;
-    document.fonts?.ready.then(() => { medir(); raf = requestAnimationFrame(medir); });
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  return (
-    <div
-      ref={cajaRef}
-      className={`flex items-center justify-center overflow-hidden font-cond
-        leading-none text-pizarra-marco ${marco}`}
-      style={{
-        background: 'repeating-linear-gradient(45deg,#1c1c22,#1c1c22 10px,#16161b 10px,#16161b 20px)',
-      }}
-    >
-      <span
-        ref={textoRef}
-        className="whitespace-nowrap tracking-[0.04em]"
-        style={{ fontSize: ajuste.size, transform: `scaleY(${ajuste.scaleY})` }}
-      >
-        ESPACIO PATROCINANTE
-      </span>
-    </div>
-  );
-}
-
-/**
  * El cintillo de avisos del pie.
  *
  * Imágenes de patrocinante y frases de la casa desfilan juntas de derecha a
@@ -627,7 +554,29 @@ function Patrocinantes() {
   }, [promociones]);
 
   if (promociones.length === 0) {
-    return <CartelPatrocinante marco={marco} />;
+    return (
+      <div
+        className={`flex items-center px-8 font-cond text-pizarra-marco ${marco}`}
+        style={{
+          background: 'repeating-linear-gradient(45deg,#1c1c22,#1c1c22 10px,#16161b 10px,#16161b 20px)',
+        }}
+      >
+        {/* Las letras se reparten de borde a borde —`inter-character` estira
+            entre cada una, no sólo en los espacios— para que el cartel ocupe
+            toda la franja y se lea como parte del diseño y no como un hueco. */}
+        <span
+          className="text-[44px]"
+          style={{
+            width: '100%',
+            textAlign: 'justify',
+            textAlignLast: 'justify',
+            textJustify: 'inter-character',
+          }}
+        >
+          ESPACIO PATROCINANTE
+        </span>
+      </div>
+    );
   }
 
   // Copias suficientes para que la pista nunca sea más corta que la franja
@@ -669,8 +618,12 @@ function AvisoCintillo({ promocion: p }: { promocion: Promocion }) {
   if (p.tipo === 'texto') {
     return (
       <span
-        className={`${borde} whitespace-nowrap px-14 font-cond text-[34px] font-semibold
-          uppercase leading-none tracking-[0.06em] text-pizarra-amarillo`}
+        // Grande: la frase tiene que ocupar el alto de la franja como lo hace
+        // una imagen de patrocinante, no verse como una nota al pie. Con
+        // `leading-none` la caja de línea es igual a la fuente: 92 px entra en
+        // los ~108 de la franja sin recortarse, con las mayúsculas dominando.
+        className={`${borde} whitespace-nowrap px-12 font-cond text-[92px] font-bold
+          uppercase leading-none tracking-[0.03em] text-pizarra-amarillo`}
       >
         {p.texto}
       </span>
