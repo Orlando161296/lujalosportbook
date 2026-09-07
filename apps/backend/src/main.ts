@@ -1,7 +1,10 @@
 import 'reflect-metadata';
+import { join } from 'node:path';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { PrismaService } from './prisma/prisma.service';
+import { aplicarMigracionesPendientes } from './prisma/migrador';
 
 // En producción esto corre como sidecar de Tauri (ver stack técnico: sin
 // Docker, backend embebido, arrancado y cerrado junto con la app). El
@@ -22,6 +25,26 @@ async function bootstrap() {
     logger: EMBEBIDO ? ['error', 'warn'] : ['log', 'error', 'warn', 'debug', 'verbose'],
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Poner la base al día ANTES de atender: una actualización que agregue una
+  // columna la aplica sola, sin que nadie abra una terminal en el local. Las
+  // carpetas de migración viajan al lado de `dist/` (ver empaquetar.js). Si
+  // falla, se sigue: es peor no arrancar que arrancar con una función nueva a
+  // medias, y quedó el respaldo.
+  const log = new Logger('Migrador');
+  try {
+    const prisma = app.get(PrismaService);
+    await prisma.$connect();
+    const aplicadas = await aplicarMigracionesPendientes(
+      prisma,
+      join(__dirname, '..', 'prisma', 'migrations'),
+      (m) => log.log(m),
+    );
+    if (aplicadas.length === 0) log.log('Base al día.');
+  } catch (causa) {
+    log.error(`No se pudieron aplicar migraciones: ${(causa as Error).message}`);
+  }
+
   await app.listen(PUERTO, '0.0.0.0');
   // eslint-disable-next-line no-console
   console.log(`Backend Lujalo escuchando en http://0.0.0.0:${PUERTO}`);

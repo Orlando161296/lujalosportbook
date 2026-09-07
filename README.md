@@ -125,7 +125,14 @@ Qué hace cada parte:
   máquina que compila, que no puede viajar en un instalador.
 - La base sale de `plantilla.db`, migrada y sembrada al empaquetar. El Rust la
   copia al `AppData` del usuario la primera vez que se abre la app, así el
-  instalador no necesita el CLI de Prisma ni correr migraciones en el local.
+  instalador no necesita el CLI de Prisma para crearla.
+- **Las actualizaciones migran solas.** Al arrancar, el backend
+  (`src/prisma/migrador.ts`) revisa `_prisma_migrations` y corre el
+  `migration.sql` de lo que falte contra la base real —antes hace un respaldo
+  `lujalo.db.respaldo-<fecha>`—. Así instalar una versión nueva encima de la
+  vieja es doble clic al `.exe` y listo, tenga o no cambios de esquema. No
+  usa el CLI de Prisma (son ~100 MB de engines): parte el SQL a mano, lo que
+  alcanza para las migraciones de esquema que genera Prisma.
 - Todo lo que se escribe —base, avisos de la pizarra, configuración de la
   impresora— vive en `AppData` y no en Archivos de Programa, que es de sólo
   lectura para un usuario común.
