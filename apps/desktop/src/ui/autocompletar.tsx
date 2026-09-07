@@ -31,11 +31,17 @@ export const Autocompletar = forwardRef<HTMLInputElement, {
    * maneja el llamador, que en el remate la usa para retroceder un campo.
    */
   onEscape?: () => void;
+  /**
+   * Sugerencia «fantasma»: se muestra en gris —como un placeholder— mientras
+   * el campo está vacío, y Tab la acepta. En el remate es el postor que se
+   * llevó el mismo caballo en otra tabla.
+   */
+  fantasma?: string;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
 }>(function Autocompletar(
-  { valor, onCambio, sugerencias, onConfirmar, onEscape, placeholder, disabled, className = '' },
+  { valor, onCambio, sugerencias, onConfirmar, onEscape, fantasma, placeholder, disabled, className = '' },
   ref,
 ) {
   const [abierto, setAbierto] = useState(false);
@@ -79,11 +85,20 @@ export const Autocompletar = forwardRef<HTMLInputElement, {
         className="w-full font-semibold"
         value={valor}
         disabled={disabled}
-        placeholder={placeholder}
+        // Con el campo vacío el fantasma ocupa el lugar del placeholder: se
+        // lee como una sugerencia y Tab lo acepta.
+        placeholder={!valor && fantasma ? fantasma : placeholder}
         autoComplete="off"
         onFocus={() => setAbierto(true)}
         onChange={(e) => { onCambio(e.target.value); setAbierto(true); }}
         onKeyDown={(e) => {
+          if (e.key === 'Tab' && !e.shiftKey && fantasma && !valor.trim()) {
+            // Aceptar el fantasma sin moverse de campo: después Enter graba.
+            e.preventDefault();
+            onCambio(fantasma);
+            setAbierto(false);
+            return;
+          }
           if (e.key === 'ArrowDown') {
             e.preventDefault();
             setAbierto(true);

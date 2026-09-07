@@ -355,6 +355,20 @@ export function Tablero() {
     : undefined;
   const editando = jugadaEnFoco != null;
 
+  /**
+   * Si este ejemplar ya se le adjudicó a alguien en otra tabla, ese nombre se
+   * ofrece como fantasma en el campo Jugador y Tab lo acepta: el mismo postor
+   * se lleva el caballo en las tres tablas casi siempre, y así no hay que
+   * volver a teclearlo. Se busca en orden de tabla —lo de la 1 es lo más
+   * probable— y sólo entre postores con nombre (la casa no cuenta).
+   */
+  const sugerenciaPostor = ejemplarElegido && !editando && !esCasa
+    ? carrera.tablas
+        .filter((t) => t.id !== tablaActual?.id)
+        .map((t) => jugadaDe.get(`${t.id}:${ejemplarElegido.id}`))
+        .find((j) => j && !j.esCasa && j.postor)?.postor ?? ''
+    : '';
+
   /** Vuelve al alta en blanco, listo para el caballo siguiente. */
   const limpiarFormulario = () => {
     setMonto('');
@@ -556,6 +570,9 @@ export function Tablero() {
                 valor={esCasa ? 'LA CASA' : jugador}
                 disabled={esCasa}
                 placeholder="Nombre o apodo"
+                // El postor que se llevó este caballo en otra tabla, como
+                // fantasma: Tab lo acepta sin volver a teclearlo.
+                fantasma={sugerenciaPostor}
                 sugerencias={sugerenciasJugador}
                 // En mayúsculas desde la primera tecla: es como se va a ver
                 // en el tablero y en el TV.
